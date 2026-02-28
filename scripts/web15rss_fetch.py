@@ -24,6 +24,7 @@ from bs4 import BeautifulSoup
 CACHE_DIR = "/opt/hamclock-backend/cache/rss"
 REQUEST_TIMEOUT = 15
 HEADERS = {"User-Agent": "Mozilla/5.0"}
+ARNEWSLINE_MAX = 5
 NG3K_MAX = 5
 HAMWEEKLY_MAX = 5
 
@@ -106,6 +107,8 @@ def fetch_arnewsline() -> None:
 
     lines = []
     for line in text.splitlines():
+        if len(lines) >= ARNEWSLINE_MAX:
+            break
         line = line.strip()
         if line.startswith("- "):
             headline = line[2:].strip()
