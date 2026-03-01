@@ -89,6 +89,10 @@ RUN cd /opt/hamclock-backend && \
     # set up logrotate \
     mv ohb.logrotate /etc/logrotate.d/ohb && \
     chown root:root /etc/logrotate.d/ohb && \
+    # I like dates in the rotated filenames \
+    sed -i 's/^#dateext/dateext/' /etc/logrotate.conf && \
+    # observed that it doesn't release the filehandle for access.log. recommend sol'n \
+    sed -i '/postrotate/,/endscript/d; /notifempty/a \        copytruncate' /etc/logrotate.d/lighttpd && \
     # \
     # set up lighttpd \
     cp lighttpd-conf/*.conf /etc/lighttpd/conf-available/ && \
