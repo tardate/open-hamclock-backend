@@ -37,11 +37,22 @@ extract_frame_png() {
 
   mkdir -p "$(dirname "$png")"
 
-  # Extract the last frame (most recent) instead of the first
+  # Get video duration in seconds
+  local duration
+  duration=$(ffprobe -v error -select_streams v:0 \
+    -show_entries format=duration \
+    -of default=noprint_wrappers=1:nokey=1 "$mp4")
+
+  # Seek to 5 seconds before end to land on last keyframe area
+  local seek
+  seek=$(echo "$duration - 5" | bc)
+  # Safety: don't seek to negative
+  if (( $(echo "$seek < 0" | bc -l) )); then seek=0; fi
+
   ffmpeg -hide_banner -loglevel error -y \
-    -sseof -3 \
+    -ss "$seek" \
     -i "$mp4" \
-    -vf "select=eq(n\,0)" -vframes 1 \
+    -vframes 1 \
     -pix_fmt rgb24 \
     "$png"
 }
