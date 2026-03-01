@@ -1,0 +1,23 @@
+/var/log/lighttpd/*.log {
+    weekly
+    missingok
+    # keep for 3 years
+    rotate 156
+    compress
+    delaycompress
+    notifempty
+    copytruncate
+    sharedscripts
+
+    # Anonymize the file that was just timestamped today
+    postrotate
+        # Finds the log file ending in today's date (YYYYMMDD)
+        TODAY=$(date +%Y%m%d)
+        TARGET="/var/log/lighttpd/access.log-$TODAY"
+ 
+        if [ -f "$TARGET" ]; then
+            # Anonymize the file and replace the original
+            anonip --input "$TARGET" -o "$TARGET.tmp" && mv "$TARGET.tmp" "$TARGET"
+        fi
+    endscript
+}

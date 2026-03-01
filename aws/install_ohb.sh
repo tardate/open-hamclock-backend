@@ -412,7 +412,7 @@ echo -e "${GRN}lighttpd configured${NC}"
 STEP=$((STEP+1)); progress $STEP $STEPS
 echo -e "${BLU}==> Installing logrotate config${NC}"
 
-sudo cp "$BASE/ohb.logrotate" /etc/logrotate.d/ohb
+sudo cp "$BASE/logrotate/ohb.logrotate" /etc/logrotate.d/ohb
 sudo logrotate -d /etc/logrotate.conf
 
 # ---------- initial gen ----------
