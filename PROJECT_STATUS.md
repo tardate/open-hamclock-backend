@@ -1,5 +1,7 @@
 ## Project Completion Status
 
+OHB is and always will be free to use and download. 
+
 Each supporting file type has a data generation script. These scripts operate on a schedule that is defined in a [crontab](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/scripts/crontab). The crontab has been specifically tuned to match as close as possible the original ClearSkyInstitute data generation times and be friendly to CPU/MEM on the host. 
 
 [Installers](https://github.com/BrianWilkinsFL/open-hamclock-backend/tree/main/aws) are used to setup, configure and install OHB. Container based install is the simplest path go get OHB up and running. See here for [install steps](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/INSTALL.md)
