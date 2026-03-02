@@ -5,6 +5,7 @@ less
 vim
 
 # packages required by hamclock-backend
+anonip
 bc
 cron
 curl

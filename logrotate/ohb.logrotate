@@ -1,8 +1,7 @@
 /opt/hamclock-backend/logs/*.log {
     weekly
     missingok
-    # keep for 3 years
-    rotate 156
+    rotate 12
     compress
     delaycompress
     notifempty
