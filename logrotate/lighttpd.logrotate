@@ -1,8 +1,8 @@
 /var/log/lighttpd/*.log {
-    weekly
+    daily
     missingok
-    # keep for 3 years
-    rotate 156
+    # keep for 2 years
+    rotate 730
     compress
     delaycompress
     notifempty
