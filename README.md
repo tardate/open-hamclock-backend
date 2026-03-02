@@ -2,26 +2,26 @@
 
 When the original backend went dark, the clocks didn’t have to. 
 
+## What is OHB?
+OHB is an open-source, backend replacement for HamClock. It maintains the HamClock interface by dynamically generating live propagation data, maps, and feeds. It can be hosted on compute as small as a Raspberry Pi3B+.
+
 ## Overview
 Mitigates centralized backend risk by enabling deployment across multiple independent, federated instances. Continuity is guaranteed since OHB is open source and easily maintained.
 
-🧱 Open-source, self-hostable backend replacement for HamClock — restoring live propagation data, maps, and feeds.
+All maps + data feeds are generated on your own compute. 
 
+Note: VOACAP DE-DX, VOACAP REL/TOA, and PSK Reporter are in work.
+
+## Cost
 The software is free to use and download. We do not take donations.
 
-OHB currently proxies VOACAP and PSKReporter. All other feeds and maps are generated locally. Backend selection always remains user-controlled - no lock-in to OHB if you change your mind.
+## Feed Info
+All data feeds and maps are generated on your own compute. Backend selection always remains user-controlled - no lock-in to OHB if you change your mind.
 
 ## What's a "backend"? 
+It is how HamClock got all of its data. Without a separate backend, all HamClock's might cease to function by June 2026. Switch now or switch later, your call. There is no rush if you are not comfortable.
 
-It is how HamClock got all of its data. Without a separate backend, all HamClock's might cease to function by June 2026. Switch now or switch later, your call.
-
-Drop-in compatible with existing HamClock's — no firmware changes required.
-
-OHB provides faithful replacements for the data feeds and map assets
-that HamClock depends on — built by operators, for operators.
-
-All maps are generated on your own self hosted hardware. VOACAP is in work. 
-
+## Important Note
 > This project is not affiliated with HamClock or its creator,
 > Elwood Downey, WB0OEW.
 > We extend our sincere condolences to the Downey family.
@@ -160,6 +160,8 @@ As of today:
 👉 Full artifact tracking and integration status:
 [PROJECT_STATUS.md](PROJECT_STATUS.md) 
 ## 📚 Data Attribution 👉 [Attribution](ATTRIBUTION.md)
+All we ask is if you fork OHB that you clearly list what parts of OHB you re-used and what parts you changed.
+
 ## 🤝 Contributing
 Bug reports and pull requests are welcome on GitHub at
 https://github.com/BrianWilkinsFL/open-hamclock-backend/issues
