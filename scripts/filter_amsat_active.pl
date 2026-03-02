@@ -1,24 +1,24 @@
 #!/usr/bin/env perl
 # filter_amsat_active.pl
-# Fetches AMSAT status page, finds satellites with status today,
-# filters the Celestrak TLE file to matching satellites, and writes
-# esats.txt with friendly AMSAT names — replacing build_esats.pl.
+# Filters the Celestrak TLE file to satellites defined in the ALIAS map
+# (i.e., those shown on HamClock's satellite map), and writes esats.txt
+# with friendly AMSAT names.
+#
+# No longer fetches AMSAT status page — includes all mapped satellites
+# regardless of reported activity.
 #
 
 use strict;
 use warnings;
-use LWP::UserAgent;
 
-my $AMSAT_URL = "https://www.amsat.org/status/";
 my $TLE_IN    = $ENV{ESATS_TLE_CACHE} // "/opt/hamclock-backend/tle/tles.txt";
 my $TLE_OUT   = $ENV{ESATS_OUT}       // "/opt/hamclock-backend/htdocs/ham/HamClock/esats/esats.txt";
 
 # AMSAT name => { tle => Celestrak name, out => friendly output name }
-# Keys are uppercased. Only needed when AMSAT and Celestrak names differ,
-# or when the AMSAT page uses mode-suffixed names (e.g. "AO-7 [U/V]").
+# Keys are uppercased. Only needed when AMSAT and Celestrak names differ.
 # 'out' is what gets written to esats.txt.
+# Entries with empty 'tle' are skipped (not in Celestrak feeds).
 my %ALIAS = (
-    # Standard aliases (AMSAT name differs from Celestrak name)
     'AO-10'             => { tle => 'PHASE 3B (AO-10)',       out => 'AO-10'   },
     'AO-123'            => { tle => 'ASRTU-1 (AO-123)',       out => 'AO-123'  },
     'AO-27'             => { tle => 'EYESAT A (AO-27)',       out => 'AO-27'   },
@@ -51,65 +51,17 @@ my %ALIAS = (
     'SONATE-2'          => { tle => 'SONATE-2',                out => 'SONATE-2'},
 );
 
-# --- Fetch AMSAT status page ---
-my $ua = LWP::UserAgent->new(timeout => 30);
-$ua->agent("fetch-amsat-status/1.0");
-my $resp = $ua->get($AMSAT_URL);
-die "Failed to fetch AMSAT status: " . $resp->status_line . "\n"
-    unless $resp->is_success;
-
-my $html = $resp->decoded_content;
-
-# --- Parse satellite names with status today ---
-# %active keys are uppercased Celestrak TLE names
-# %active values are the friendly output name to write
-my %active;
-
-while ($html =~ m{<tr[^>]*>\s*<td[^>]*>\s*(?:<a[^>]*>)?([^<]+?)(?:</a>)?\s*</td>(.*?)</tr>}gsi) {
-    my $sat_name = $1;
-    my $cells    = $2;
-    $sat_name =~ s/^\s+|\s+$//g;
-
-    my @tds;
-    while ($cells =~ m{<td([^>]*)>.*?</td>}gsi && @tds < 60) {
-        push @tds, $1;
-    }
-
-    # Active = any cell with a known status bgcolor
-    my $has_status = grep {
-        /bgcolor\s*=\s*["']?(#4169E1|orange|yellow|#9900FF)["']?/i
-    } @tds;
-
-    next unless $has_status;
-
-    # Strip trailing mode/band suffix like " [U/V]", " [FM]", " [APRS]", " [SSTV]", " SSTV", etc.
-    # The AMSAT page often has one row per mode; we just need the base satellite name.
-    (my $base_name = $sat_name) =~ s/\s*[\[({][\w\/\s]+[\])}]\s*$//;
-    $base_name =~ s/\s+$//;
-
-    # Try both original and base name for alias lookup (uppercased)
-    my $uname      = uc($sat_name);
-    my $ubase      = uc($base_name);
-
-    my $entry =   $ALIAS{$uname}
-               // $ALIAS{$ubase}
-               // $ALIAS{$sat_name}
-               // $ALIAS{$base_name};
-
-    if (defined $entry) {
-        next if !$entry->{tle} || $entry->{tle} eq '';
-        $active{uc($entry->{tle})} = $entry->{out};
-    } else {
-        # No alias — use base name; Celestrak name should match
-        $active{$ubase} = $base_name;
-    }
+# Build lookup: uppercased Celestrak TLE name => friendly output name
+# Skip entries with empty tle (not in Celestrak)
+my %want;
+for my $key (keys %ALIAS) {
+    my $entry = $ALIAS{$key};
+    next unless $entry->{tle} && $entry->{tle} ne '';
+    $want{uc($entry->{tle})} = $entry->{out};
 }
 
-my $found = scalar keys %active;
-print STDERR "AMSAT active satellites today: $found\n";
-if ($found == 0) {
-    die "ERROR: No active satellites parsed from AMSAT — aborting to avoid empty output\n";
-}
+my $mapped = scalar keys %want;
+print STDERR "Satellites in map (ALIAS entries with TLEs): $mapped\n";
 
 # --- Read and filter TLE file, writing friendly names ---
 open my $in, "<", $TLE_IN or die "Cannot open TLE file $TLE_IN: $!\n";
@@ -140,8 +92,8 @@ while ($i < @lines) {
         my $key = uc($name);
         $key =~ s/^\s+|\s+$//g;
 
-        if (exists $active{$key} && !$seen_norad{$norad}) {
-            my $out_name = $active{$key};
+        if (exists $want{$key} && !$seen_norad{$norad}) {
+            my $out_name = $want{$key};
             print $out "$out_name\n$l1\n$l2\n";
             $seen_norad{$norad} = 1;
             $written++;
@@ -153,4 +105,4 @@ while ($i < @lines) {
 }
 
 close $out;
-print STDERR "Wrote $written blocks to $TLE_OUT (from $found resolved TLE keys)\n";
+print STDERR "Wrote $written blocks to $TLE_OUT (from $mapped mapped TLE keys)\n";
