@@ -20,12 +20,8 @@ use warnings;
 use CGI;
 use DBI;
 
-# ── Configuration ─────────────────────────────────────────────────────────────
-
 my $DB_FILE      = "/opt/hamclock-backend/tmp/psk-cache/spots.db";
 my $MAX_CACHE_AGE = 1800;   # warn if DB mtime is older than 30 min
-
-# ── CGI Setup ─────────────────────────────────────────────────────────────────
 
 my $q = CGI->new;
 
@@ -61,8 +57,6 @@ if ($ofgrid && !valid_grid($ofgrid)) {
     exit;
 }
 
-# ── DB Sanity Check ───────────────────────────────────────────────────────────
-
 unless (-f $DB_FILE) {
     print STDERR "PSK db not found: $DB_FILE\n";
     print "Error: spot cache unavailable — please try again shortly.\n";
@@ -75,8 +69,6 @@ if ($db_age > $MAX_CACHE_AGE) {
     # Still serve stale data rather than returning nothing
 }
 
-# ── Build Query ───────────────────────────────────────────────────────────────
-
 my $cutoff = time() - $maxage;
 
 # Use SQLite's LIKE with a prefix pattern for grid matching.
@@ -85,7 +77,6 @@ my $cutoff = time() - $maxage;
 # bygrid matches sender grid (s_grid)
 # ofgrid matches receiver grid (r_grid)
 #
-# Both can be specified simultaneously (AND logic).
 
 my $sql = "SELECT t, s_grid, s_call, r_grid, r_call, mode, freq, snr
            FROM spots
@@ -104,8 +95,6 @@ if ($ofgrid) {
 }
 
 $sql .= " ORDER BY t DESC";
-
-# ── Execute ───────────────────────────────────────────────────────────────────
 
 my $dbh = DBI->connect(
     "dbi:SQLite:dbname=$DB_FILE",
