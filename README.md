@@ -1,13 +1,12 @@
 # 🛟  📡 OHB — Open HamClock Backend
 
-When the original backend went dark, the clocks didn’t have to.
+When the original backend went dark, the clocks didn’t have to. 
 
-🔁 [HamClock Is Not Dead](http://hamclockisnotdead.com)
-
+Mitigates centralized backend risk by enabling deployment across multiple independent, federated instances.
 
 🧱 Open-source, self-hostable backend replacement for HamClock — restoring live propagation data, maps, and feeds.
 
-The software is free to use and download. We do not take donations at this time.
+The software is free to use and download. We do not take donations.
 
 OHB currently proxies VOACAP and PSKReporter. All other feeds and maps are generated locally. Backend selection remains user-controlled.
 
