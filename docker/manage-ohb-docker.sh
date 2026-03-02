@@ -20,6 +20,8 @@ GIT_TAG=$(git describe --exact-match --tags 2>/dev/null)
 GIT_VERSION=$(git rev-parse --short HEAD 2>/dev/null)
 CONTAINER=${IMAGE_BASE##*/}
 DEFAULT_HTTP_PORT=:80
+DEFAULT_HTTPS_PORT=-
+DEFAULT_CERT_PATH=-
 DEFAULT_DASHBOARD_INSTALL=true
 DEFAULT_EXTERNAL_HTTP_LOG=false
 # the following env is the lighttpd env file
@@ -99,8 +101,11 @@ main() {
 }
 
 get_compose_opts() {
-    while getopts ":p:t:e:d:l:" opt; do
+    while getopts ":p:s:c:t:e:d:l:" opt; do
         case $opt in
+            c)
+                REQUESTED_CERT_PATH="$OPTARG"
+                ;;
             d)
                 REQUESTED_DASHBOARD_INSTALL="$OPTARG"
                 if [ "$REQUESTED_DASHBOARD_INSTALL" != true -a "$REQUESTED_DASHBOARD_INSTALL" != false ]; then
@@ -120,6 +125,9 @@ get_compose_opts() {
                 ;;
             p)
                 REQUESTED_HTTP_PORT="$OPTARG"
+                ;;
+            s)
+                REQUESTED_HTTPS_PORT="$OPTARG"
                 ;;
             t)
                 REQUESTED_TAG="$OPTARG"
@@ -214,9 +222,11 @@ get_sticky_vars() {
 save_sticky_vars() {
     cat<<EOF > $STICKY_ENV_FILE
 STICKY_HTTP_PORT="$HTTP_PORT"
+STICKY_HTTPS_PORT="$HTTPS_PORT"
 STICKY_DASHBOARD_INSTALL="$ENABLE_DASHBOARD"
 STICKY_LIGHTTPD_ENV_FILE="$ENV_FILE"
 STICKY_EXTERNAL_HTTP_LOG="$ENABLE_EXTERNAL_HTTP_LOG"
+STICKY_CERT_PATH="$CERT_PATH"
 EOF
 }
 
@@ -339,9 +349,16 @@ is_ohb_installed() {
         return $RETVAL
     else
         get_current_http_port
+        get_current_https_port
         echo "  OHB version:       '$CURRENT_TAG'"
         echo "  Docker image:      '$CURRENT_IMAGE_BASE:$CURRENT_TAG'"
         echo "  HTTP PORT in use:  '$CURRENT_HTTP_PORT'"
+        if [ -n "$CURRENT_HTTPS_PORT" ]; then
+            echo "  HTTPS PORT in use: '$CURRENT_HTTPS_PORT'"
+        fi
+        if [ "$STICKY_CERT_PATH" != "-" ]; then
+            echo "  HTTPS cert path:   '$STICKY_CERT_PATH'"
+        fi
         echo -n "  Dashboard enabled: "
         if [ -n "$STICKY_DASHBOARD_INSTALL" ]; then
             echo "'$STICKY_DASHBOARD_INSTALL'"
@@ -360,6 +377,7 @@ upgrade_ohb() {
     is_docker_installed >/dev/null || return $?
 
     get_current_http_port
+    get_current_https_port
     get_current_image_tag
 
     echo "Upgrading OHB ..."
@@ -456,6 +474,7 @@ docker_compose_down() {
 
 docker_compose_reset() {
     get_current_http_port
+    get_current_https_port
     get_current_image_tag
     docker_compose_down || return $RETVAL
     docker_compose_up
@@ -488,6 +507,7 @@ remove_ohb() {
 
 recreate_ohb() {
     get_current_http_port
+    get_current_https_port
     get_current_image_tag
 
     remove_ohb || return $RETVAL
@@ -562,6 +582,18 @@ get_current_http_port() {
     fi
 }
 
+get_current_https_port() {
+    DOCKER_HTTPS_PORT=$(docker inspect $CONTAINER 2>/dev/null | jq -r '.[0].HostConfig.PortBindings."443/tcp"[0].HostPort')
+    DOCKER_HTTPS_IP=$(docker inspect $CONTAINER 2>/dev/null | jq -r '.[0].HostConfig.PortBindings."443/tcp"[0].HostIp')
+    if [ "$DOCKER_HTTPS_PORT" != 'null' ]; then
+        if [ "$DOCKER_HTTPS_IP" != 'null' ]; then
+            CURRENT_HTTPS_PORT=$DOCKER_HTTPS_IP:$DOCKER_HTTPS_PORT
+        else
+            CURRENT_HTTPS_PORT=:$DOCKER_HTTPS_PORT
+        fi
+    fi
+}
+
 get_current_image_tag() {
     CURRENT_DOCKER_IMAGE=$(docker inspect open-hamclock-backend 2>/dev/null | jq -r '.[0].Config.Image')
     if [ "$CURRENT_DOCKER_IMAGE" != 'null' ]; then
@@ -570,7 +602,7 @@ get_current_image_tag() {
     fi
 }
 
-determine_port() {
+determine_http_port() {
     get_current_http_port
 
     # first precedence
@@ -593,6 +625,36 @@ determine_port() {
 
     # if there was a :, it was probably IP:PORT; otherwise make sure there's a colon for port only
     [[ $HTTP_PORT =~ : ]] || HTTP_PORT=":$HTTP_PORT"
+}
+
+determine_https_port() {
+    get_current_https_port
+
+    # first precedence
+    if [ -n "$REQUESTED_HTTPS_PORT" ]; then
+        HTTPS_PORT=$REQUESTED_HTTPS_PORT
+
+    # second precedence
+    elif [ -n "$CURRENT_HTTPS_PORT" -a "$CURRENT_HTTPS_PORT" != ':' ]; then
+        HTTPS_PORT=$CURRENT_HTTPS_PORT
+
+    # third precedence
+    elif [ -n "$STICKY_HTTPS_PORT" ]; then
+        HTTPS_PORT=$STICKY_HTTPS_PORT
+
+    # fourth precedence
+    else
+        HTTPS_PORT=$DEFAULT_HTTPS_PORT
+
+    fi
+
+    if [ "$HTTPS_PORT" == "-" ]; then
+        HTTPS_PORT_MAPPING=""
+    else
+        # if there was a :, it was probably IP:PORT; otherwise make sure there's a colon for port only
+        [[ $HTTPS_PORT =~ : ]] || HTTPS_PORT=":$HTTPS_PORT"
+        HTTPS_PORT_MAPPING="- $HTTPS_PORT:443"
+    fi
 }
 
 determine_dashboard() {
@@ -629,7 +691,35 @@ determine_http_log() {
     fi
 
     if [ "$ENABLE_EXTERNAL_HTTP_LOG" == true ]; then
-        ENABLE_EXTERNAL_HTTP_LOG_LINE="- $HERE/logs/lighttpd:/var/log/lighttpd:rw"
+        EXTERNAL_HTTP_LOG_MAPPING="- $HERE/logs/lighttpd:/var/log/lighttpd:rw"
+        mkdir -p "$HERE/logs/lighttpd"
+        # perms need to be set for logrotate to work
+        chown 33:root "$HERE/logs/lighttpd"
+        chgrp go-w "$HERE/logs/lighttpd"
+    fi
+}
+
+determine_https_cert() {
+
+    # first precedence
+    if [ -n "$REQUESTED_CERT_PATH" ]; then
+        CERT_PATH=$REQUESTED_CERT_PATH
+
+    # second precedence
+    elif [ -n "$STICKY_CERT_PATH" ]; then
+        CERT_PATH=$STICKY_CERT_PATH
+
+    # third precedence
+    else
+        CERT_PATH=$DEFAULT_CERT_PATH
+
+    fi
+
+    if [ "$CERT_PATH" == "-" ]; then
+        HTTPS_CERT_MAPPING=""
+    else
+        # if there was a :, it was probably IP:PORT; otherwise make sure there's a colon for port only
+        HTTPS_CERT_MAPPING="- $CERT_PATH:/etc/lighttpd/server.pem"
     fi
 }
 
@@ -672,18 +762,18 @@ determine_tag() {
 }
 
 docker_compose_yml() {
-    determine_port
+    determine_http_port
+    determine_https_port
+    determine_https_cert
+    determine_dashboard
+    determine_http_log
 
     determine_tag || return $?
     IMAGE=$IMAGE_BASE:$TAG
 
-    determine_dashboard
-
-    determine_http_log
-
     if [ "$TAG" == "$CURRENT_TAG"  -a "$REQUEST_DOCKER_PULL" == true ]; then
         echo "Doing a docker pull of the image before docker compose."
-        docker pull $IMAGE | sed 's/^/  /'
+        docker pull $IMAGE
     fi
 
     # compose file in $DOCKER_COMPOSE_YML
@@ -693,8 +783,10 @@ docker_compose_yml() {
             sed "s|__IMAGE__|$IMAGE|" |
             sed "s/__CONTAINER__/$CONTAINER/" |
             sed "s/__HTTP_PORT__/$HTTP_PORT/" |
+            sed "s/__HTTPS_PORT_MAPPING__/$HTTPS_PORT_MAPPING/" |
             sed "s/__ENABLE_DASHBOARD__/$ENABLE_DASHBOARD/" |
-            sed "s|__ENABLE_EXTERNAL_HTTP_LOG__|$ENABLE_EXTERNAL_HTTP_LOG_LINE|"
+            sed "s|__EXTERNAL_HTTP_LOG_MAPPING__|$EXTERNAL_HTTP_LOG_MAPPING|" |
+            sed "s|__HTTPS_CERT_MAPPING__|$HTTPS_CERT_MAPPING|"
     )
 }
 
@@ -712,9 +804,11 @@ services:
       - ohb
     ports:
       - __HTTP_PORT__:80
+      __HTTPS_PORT_MAPPING__
     volumes:
       - ohb-htdocs:/opt/hamclock-backend/htdocs
-      __ENABLE_EXTERNAL_HTTP_LOG__
+      __EXTERNAL_HTTP_LOG_MAPPING__
+      __HTTPS_CERT_MAPPING__
     healthcheck:
       test: ["CMD", "curl", "-f", "-A", "healthcheck/1.0", "http://localhost:80/ham/HamClock/version.pl"]
       timeout: "5s"

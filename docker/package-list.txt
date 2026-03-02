@@ -23,6 +23,7 @@ libwww-perl
 libxml-feed-perl
 libxml-rss-perl
 lighttpd
+lighttpd-mod-openssl
 logrotate
 media-types
 python3
