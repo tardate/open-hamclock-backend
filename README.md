@@ -9,11 +9,11 @@ Mitigates centralized backend risk by enabling deployment across multiple indepe
 
 The software is free to use and download. We do not take donations.
 
-OHB currently proxies VOACAP and PSKReporter. All other feeds and maps are generated locally. Backend selection always remains user-controlled - no lock in to OHB if you change your mind.
+OHB currently proxies VOACAP and PSKReporter. All other feeds and maps are generated locally. Backend selection always remains user-controlled - no lock-in to OHB if you change your mind.
 
 ## What's a "backend"? 
 
-It is how HamClock got all of its data. Without a separate backend, all HamClock's will cease to function by June 2026.
+It is how HamClock got all of its data. Without a separate backend, all HamClock's might cease to function by June 2026. Switch now or switch later, your call.
 
 Drop-in compatible with existing HamClock's — no firmware changes required.
 
