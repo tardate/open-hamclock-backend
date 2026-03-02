@@ -3,7 +3,7 @@
 When the original backend went dark, the clocks didn’t have to. 
 
 ## Overview
-Mitigates centralized backend risk by enabling deployment across multiple independent, federated instances.
+Mitigates centralized backend risk by enabling deployment across multiple independent, federated instances. Continuity is guaranteed since OHB is open source and easily maintained.
 
 🧱 Open-source, self-hostable backend replacement for HamClock — restoring live propagation data, maps, and feeds.
 
