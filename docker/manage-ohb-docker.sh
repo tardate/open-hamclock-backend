@@ -692,11 +692,17 @@ determine_http_log() {
 
     if [ "$ENABLE_EXTERNAL_HTTP_LOG" == true ]; then
         EXTERNAL_HTTP_LOG_MAPPING="- $HERE/logs/lighttpd:/var/log/lighttpd:rw"
-        if [ $(stat -c '%u' "$HERE/logs/lighttpd" 2>/dev/null) -ne 33 ]; then
-            mkdir -p "$HERE/logs/lighttpd"
-            # perms need to be set for logrotate to work
-            echo "WARNING: folder '$HERE/logs/lighttpd' needs the following permission:"
-            echo "   sudo chown 33 $HERE/logs/lighttpd"
+        if [ "${FUNCNAME[2]}" == "docker_compose_up" ]; then
+            if [ ! -e "$HERE/logs/lighttpd" ]; then
+                mkdir -p "$HERE/logs/lighttpd"
+            fi
+            if [ "$(stat -c '%u' "$HERE/logs/lighttpd" 2>/dev/null)" != "33" ]; then
+                # perms need to be set for logrotate to work
+                echo
+                echo "WARNING: folder '$HERE/logs/lighttpd' needs the following permission:"
+                echo "   sudo chown 33 $HERE/logs/lighttpd"
+                echo
+            fi
         fi
     fi
 }
