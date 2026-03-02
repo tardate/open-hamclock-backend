@@ -445,7 +445,7 @@ docker_compose_up() {
         if [ -n "$REQUESTED_ENV_FILE" -o -n "$STICKY_LIGHTTPD_ENV_FILE" -o -r "$DEFAULT_ENV_FILE" ]; then
             copy_env_to_container >/dev/null
         fi
-        docker_compose_yml && docker compose -f <(echo "$DOCKER_COMPOSE_YML") up -d
+        docker compose -f <(echo "$DOCKER_COMPOSE_YML") up -d
         RETVAL=$?
     fi
 
@@ -692,10 +692,18 @@ determine_http_log() {
 
     if [ "$ENABLE_EXTERNAL_HTTP_LOG" == true ]; then
         EXTERNAL_HTTP_LOG_MAPPING="- $HERE/logs/lighttpd:/var/log/lighttpd:rw"
-        mkdir -p "$HERE/logs/lighttpd"
-        # perms need to be set for logrotate to work
-        chown 33:root "$HERE/logs/lighttpd"
-        chgrp go-w "$HERE/logs/lighttpd"
+        if [ "${FUNCNAME[2]}" == "docker_compose_up" ]; then
+            if [ ! -e "$HERE/logs/lighttpd" ]; then
+                mkdir -p "$HERE/logs/lighttpd"
+            fi
+            if [ "$(stat -c '%u' "$HERE/logs/lighttpd" 2>/dev/null)" != "33" ]; then
+                # perms need to be set for logrotate to work
+                echo
+                echo "WARNING: folder '$HERE/logs/lighttpd' needs the following permission:"
+                echo "   sudo chown 33 $HERE/logs/lighttpd"
+                echo
+            fi
+        fi
     fi
 }
 
