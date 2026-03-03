@@ -3,6 +3,10 @@
 echo "This image is based on git: '$(cat hamclock-backend/git.version)'"
 echo "Start up time: $(date -u +%H:%M:%S)"
 
+echo "Preparing for pskr ..."
+mkdir -p /opt/hamclock-backend/htdocs/pskr
+chown $PSKR_UID /opt/hamclock-backend/htdocs/pskr
+
 echo "Syncing the initial, static directory structure ..."
 mkdir -p /opt/hamclock-backend/htdocs/ham
 cp -a /opt/hamclock-backend/ham/HamClock /opt/hamclock-backend/htdocs/ham

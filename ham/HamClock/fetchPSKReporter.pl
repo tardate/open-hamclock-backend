@@ -19,7 +19,7 @@ use CGI;
 use LWP::UserAgent;
 use URI;
 
-my $CACHE_SERVICE = "http://127.0.0.1:5000";
+my $CACHE_SERVICE = "http://pskr-mqtt-cache:5000";
 my $TIMEOUT       = 10;   # seconds
 
 my $q = CGI->new;
