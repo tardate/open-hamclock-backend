@@ -1,8 +1,8 @@
 /var/log/lighttpd/*.log {
     daily
     missingok
-    # keep for 2 years
-    rotate 730
+    # keep non-anonymized for 2 weeks
+    rotate 15
     compress
     delaycompress
     notifempty
@@ -16,8 +16,8 @@
         TARGET="/var/log/lighttpd/access.log-$TODAY"
  
         if [ -f "$TARGET" ]; then
-            # Anonymize the file and replace the original
-            anonip --input "$TARGET" -o "$TARGET.tmp" && mv "$TARGET.tmp" "$TARGET"
+            # Anonymize the file and give it a new name
+            anonip --input "$TARGET" -o "$TARGET.anon"
         fi
     endscript
 }
