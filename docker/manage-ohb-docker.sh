@@ -839,10 +839,6 @@ services:
         target: /data
         volume:
           subpath: pskr
-    healthcheck:
-      test: ["CMD", "curl", "-o", "/dev/null", "-A", "healthcheck/1.0", "http://localhost:5000/status"]
-      timeout: "5s"
-      start_period: "20s"
     logging:
       options:
         max-size: "10m"
