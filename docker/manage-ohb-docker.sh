@@ -808,6 +808,7 @@ services:
     restart: unless-stopped
     environment:
       ENABLE_DASHBOARD: __ENABLE_DASHBOARD__
+      PSKR_UID: 1001
     networks:
       - ohb
     ports:
@@ -825,6 +826,30 @@ services:
       options:
         max-size: "10m"
         max-file: "2"
+
+  pskr:
+    container_name: pskr-mqtt-cache
+    image: komacke/pskr-mqtt-cache:1.0
+    restart: unless-stopped
+    networks:
+      - ohb
+    volumes:
+      - type: volume
+        source: ohb-htdocs
+        target: /data
+        volume:
+          subpath: pskr
+    healthcheck:
+      test: ["CMD", "curl", "-o", "/dev/null", "-A", "healthcheck/1.0", "http://localhost:5000/status"]
+      timeout: "5s"
+      start_period: "20s"
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "2"
+    depends_on:
+      web:
+        condition: service_healthy
 
 networks:
   ohb:
