@@ -82,7 +82,7 @@ These files never change or are unlikely to need change any time soon.
 - [x] Solar flux + history data generation, pull and display
 - [x] Amateur Satellites data generation, pull and display + [active AMSAT status satellite filter](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/scripts/filter_amsat_active.pl)
 - [x] PSK Reporter WSPR request and display
-- [x] PSK Reporter Spots request and display
+- [x] PSK Reporter Spots request and display (MQTT based - FAST)
 - [X] VOACAP DE DX - proxied
 - [ ] VOACAP DE DX - non proxied
 - [x] VOACAP MUF MAP (REL/TOA) - proxied
