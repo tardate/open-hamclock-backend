@@ -18,6 +18,7 @@ else
     echo Removing dashboard and only installing credits ...
     find /opt/hamclock-backend/htdocs -maxdepth 1 -type f ! -name prime_crontabs.done -exec rm -f "{}" +
     cp /opt/hamclock-backend/ham/dashboard/favicon.ico /opt/hamclock-backend/htdocs
+    cp /opt/hamclock-backend/ham/dashboard/credits.html /opt/hamclock-backend/htdocs
     cp /opt/hamclock-backend/ham/dashboard/credits-only-index.html /opt/hamclock-backend/htdocs/index.html
 fi
 
