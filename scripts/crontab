@@ -38,7 +38,7 @@ LC_ALL=C
 LANG=C
 CRON_TZ=UTC
 
-15 10,14 * * * $VENV/bin/python3 $BASE/scripts/ssn_simple.py            >> $BASE/logs/ssn_simple.log 2>&1
+44 * * * *     $VENV/bin/python3 $BASE/scripts/ssn_simple.py            >> $BASE/logs/ssn_simple.log 2>&1
 */5 * * * *    $VENV/bin/python3 $BASE/scripts/swind_simple.py          >> $BASE/logs/gen_swind_24hr.log 2>&1
 */10 * * * *   $VENV/bin/python3 $BASE/scripts/bz_simple.py             >> $BASE/logs/bz_simple.log 2>&1
 */30 * * * *   $VENV/bin/python3 $BASE/scripts/flux_simple.py           >> $BASE/logs/flux_simple.log 2>&1
