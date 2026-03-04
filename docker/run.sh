@@ -13,11 +13,13 @@ cp -a /opt/hamclock-backend/ham/HamClock /opt/hamclock-backend/htdocs/ham
 if [ "$ENABLE_DASHBOARD" == true ]; then
     echo Installing dashboard ...
     cp -a /opt/hamclock-backend/ham/dashboard/* /opt/hamclock-backend/htdocs
+    rm -f /opt/hamclock-backend/htdocs/credits-only-index.html 
 else
-    echo Removing dashboard ...
+    echo Removing dashboard and only installing credits ...
     find /opt/hamclock-backend/htdocs -maxdepth 1 -type f ! -name prime_crontabs.done -exec rm -f "{}" +
     cp /opt/hamclock-backend/ham/dashboard/favicon.ico /opt/hamclock-backend/htdocs
-    cp /opt/hamclock-backend/ham/dashboard/ascii.txt /opt/hamclock-backend/htdocs
+    cp /opt/hamclock-backend/ham/dashboard/credits.html /opt/hamclock-backend/htdocs
+    cp /opt/hamclock-backend/ham/dashboard/credits-only-index.html /opt/hamclock-backend/htdocs/index.html
 fi
 
 # start the web server
