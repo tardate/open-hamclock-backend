@@ -7,11 +7,13 @@ Build ssn-31.txt (YYYY MM DD SSN) using:
 
 Logic matches the CSI backend:
   1. Read 30 rows from daily-solar-indices.txt
-  2. Prepend the single oldest line from the current ssn-31.txt that is NOT
+  2. Strip any existing entries dated after today (prevents stale future-dated
+     entries from a previous bad run from persisting)
+  3. Prepend the single oldest line from the current ssn-31.txt that is NOT
      already present in the NOAA data (i.e. it has aged out of NOAA's window)
-  3. If today (UTC) is not yet in NOAA's file, fetch today's value from SWPC JSON
-     and append it (dropping the carry-forward to keep exactly 31 lines)
-  4. Write exactly 31 lines, ascending by date, zero-padded MM/DD
+  4. If today (UTC) is not yet in NOAA's file AND combined is still short,
+     fetch today's value from SWPC JSON (only if Obsdate matches today exactly)
+  5. Write exactly 31 lines, ascending by date, zero-padded MM/DD
 """
 
 from __future__ import annotations
@@ -80,7 +82,7 @@ def read_noaa_swpc(url: str) -> pd.DataFrame:
 
 
 def get_swpc_json_today(url: str, today) -> Optional[int]:
-    """Return today's swpc_ssn from SWPC JSON, or None if unavailable."""
+    """Return today's swpc_ssn from SWPC JSON only if Obsdate matches today, else None."""
     r = requests.get(url, timeout=20)
     r.raise_for_status()
     data = r.json()
@@ -89,9 +91,12 @@ def get_swpc_json_today(url: str, today) -> Optional[int]:
     for obj in reversed(data):
         if not isinstance(obj, dict):
             continue
+        obsdate = obj.get("Obsdate", "")
+        if not obsdate.startswith(today.isoformat()):
+            continue
         v = obj.get("swpc_ssn")
         if v is None:
-            continue
+            return None
         try:
             return int(v)
         except Exception:
@@ -111,12 +116,13 @@ def main() -> int:
 
     noaa_dates = set(noaa["date"])
 
+    # Strip any future-dated entries from a previous bad run
+    existing = existing[existing["date"] <= today_utc]
+
     # Find the oldest existing entry that has already aged out of NOAA's window
     carry = existing[~existing["date"].isin(noaa_dates)].sort_values("date")
 
     if carry.empty:
-        # No carry-forward available — can only happen on very first run or if
-        # existing file is empty/absent. Fall back to just the NOAA rows.
         print(
             "WARNING: no carry-forward entry available; output will have fewer than "
             f"{N_DAYS} lines on first run. Seed {OUT} once to fix.",
@@ -132,24 +138,28 @@ def main() -> int:
             .sort_values("date")
         )
 
-    if len(combined) < N_DAYS:
-        print(
-            f"WARNING: only {len(combined)} days available (need {N_DAYS}). "
-            "Output will be short until the carry-forward chain is seeded.",
-            file=sys.stderr,
-        )
-
-    # If today isn't in NOAA's file yet, try SWPC JSON for today's projected value
-    if today_utc not in set(noaa["date"]):
+    # If today isn't in NOAA's file yet AND we're short, try SWPC JSON
+    if today_utc not in noaa_dates and len(combined) < N_DAYS:
         try:
             v = get_swpc_json_today(SWPC_JSON_URL, today_utc)
             if v is not None:
-                combined = pd.concat(
-                    [combined, pd.DataFrame([{"date": today_utc, "ssn": v}])],
-                    ignore_index=True,
-                ).drop_duplicates(subset=["date"], keep="last").sort_values("date")
+                combined = (
+                    pd.concat(
+                        [combined, pd.DataFrame([{"date": today_utc, "ssn": v}])],
+                        ignore_index=True,
+                    )
+                    .drop_duplicates(subset=["date"], keep="last")
+                    .sort_values("date")
+                )
         except Exception as e:
             print(f"WARNING: SWPC JSON fetch failed: {e}", file=sys.stderr)
+
+    if len(combined) < N_DAYS:
+        print(
+            f"WARNING: only {len(combined)} days available (need {N_DAYS}). "
+            "Output will be short until NOAA publishes today or carry-forward is seeded.",
+            file=sys.stderr,
+        )
 
     # Keep at most N_DAYS (shoulders off the carry-forward when today is appended)
     combined = combined.tail(N_DAYS)
