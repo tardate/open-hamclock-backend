@@ -321,7 +321,7 @@ is_ohb_installed() {
     else
         echo "  git checkout not found."
     fi
-    TAG_FROM_GIT=$(curl -s --connect-timeout 2 "https://api.github.com/repos/BrianWilkinsFL/open-hamclock-backend/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    TAG_FROM_GIT=$(curl -s --connect-timeout 2 "$GITHUB_LATEST_RELEASE_URL" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
     echo "  Latest release available from GitHub: '$TAG_FROM_GIT'"
 
     echo
@@ -350,16 +350,18 @@ is_ohb_installed() {
     else
         get_current_http_port
         get_current_https_port
-        echo "  OHB version:       '$CURRENT_TAG'"
-        echo "  Docker image:      '$CURRENT_IMAGE_BASE:$CURRENT_TAG'"
-        echo "  HTTP PORT in use:  '$CURRENT_HTTP_PORT'"
+        get_current_pskr_image_tag
+        echo "  OHB version:         '$CURRENT_TAG'"
+        echo "  Docker image:        '$CURRENT_IMAGE_BASE:$CURRENT_TAG'"
+        echo "  Docker image (pskr): '$CURRENT_PSKR_IMAGE_BASE:$CURRENT_PSKR_TAG'"
+        echo "  HTTP PORT in use:    '$CURRENT_HTTP_PORT'"
         if [ -n "$CURRENT_HTTPS_PORT" ]; then
-            echo "  HTTPS PORT in use: '$CURRENT_HTTPS_PORT'"
+            echo "  HTTPS PORT in use:   '$CURRENT_HTTPS_PORT'"
         fi
         if [ "$STICKY_CERT_PATH" != "-" ]; then
-            echo "  HTTPS cert path:   '$STICKY_CERT_PATH'"
+            echo "  HTTPS cert path:     '$STICKY_CERT_PATH'"
         fi
-        echo -n "  Dashboard enabled: "
+        echo -n "  Dashboard enabled:   "
         if [ -n "$STICKY_DASHBOARD_INSTALL" ]; then
             echo "'$STICKY_DASHBOARD_INSTALL'"
         else
@@ -457,7 +459,7 @@ docker_compose_down() {
     RETVAL=$?
 
     if is_container_exists; then
-        RUNNING_PROJECT=$(docker inspect open-hamclock-backend | jq -r '.[0].Config.Labels."com.docker.compose.project"')
+        RUNNING_PROJECT=$(docker inspect $CONTAINER | jq -r '.[0].Config.Labels."com.docker.compose.project"')
         if [ "$RUNNING_PROJECT" != "$DOCKER_PROJECT" ]; then
             echo "ERROR: this OHB was created with a different docker-compsose file. Please run" >&2
             echo "    'docker stop $CONTAINER'" >&2
@@ -595,10 +597,18 @@ get_current_https_port() {
 }
 
 get_current_image_tag() {
-    CURRENT_DOCKER_IMAGE=$(docker inspect open-hamclock-backend 2>/dev/null | jq -r '.[0].Config.Image')
+    CURRENT_DOCKER_IMAGE=$(docker inspect $CONTAINER 2>/dev/null | jq -r '.[0].Config.Image')
     if [ "$CURRENT_DOCKER_IMAGE" != 'null' ]; then
         CURRENT_TAG=${CURRENT_DOCKER_IMAGE#*:}
         CURRENT_IMAGE_BASE=${CURRENT_DOCKER_IMAGE%:*}
+    fi
+}
+
+get_current_pskr_image_tag() {
+    CURRENT_PSKR_DOCKER_IMAGE=$(docker inspect pskr-mqtt-cache 2>/dev/null | jq -r '.[0].Config.Image')
+    if [ "$CURRENT_PSKR_DOCKER_IMAGE" != 'null' ]; then
+        CURRENT_PSKR_TAG=${CURRENT_PSKR_DOCKER_IMAGE#*:}
+        CURRENT_PSKR_IMAGE_BASE=${CURRENT_PSKR_DOCKER_IMAGE%:*}
     fi
 }
 
@@ -829,7 +839,7 @@ services:
 
   pskr:
     container_name: pskr-mqtt-cache
-    image: komacke/pskr-mqtt-cache:1.3
+    image: komacke/pskr-mqtt-cache:1.4
     restart: unless-stopped
     networks:
       - ohb
