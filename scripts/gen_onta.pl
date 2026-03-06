@@ -1,4 +1,27 @@
 #!/usr/bin/env perl
+# =============================================================================
+#
+#   #####   #     #  ######
+#  #     #  #     #  #     #
+#  #     #  #     #  #     #
+#  #     #  #######  ######
+#  #     #  #     #  #     #
+#  #     #  #     #  #     #
+#   #####   #     #  ######
+#
+#  Open HamClock Backend (OHB)
+#  gen_onta.pl -- POTA / SOTA / WWFF on-the-air spot aggregator
+#
+#  Part of the OHB project:
+#  https://github.com/BrianWilkinsFL/open-hamclock-backend/tree/main
+#
+#  Fetches live activator spots from POTA, SOTA (via Parks'n'Peaks),
+#  and WWFF (via cqgma.org), deduplicates, resolves grid/lat/lng from
+#  cached reference CSVs, and writes onta.txt for HamClock consumption.
+#
+#  License: MIT
+# =============================================================================
+
 use strict;
 use warnings;
 
@@ -122,8 +145,10 @@ sub resolve_location {
 {
     my $resp = $ua->get($POTA_URL);
     if ($resp->is_success) {
-        my $spots = decode_json($resp->decoded_content);
-        if (ref $spots eq 'ARRAY') {
+        my $spots = eval { decode_json($resp->decoded_content) };
+        if ($@) {
+            warn "POTA JSON parse failed: $@\n";
+        } elsif (ref $spots eq 'ARRAY') {
             for my $s (@$spots) {
                 next unless ref $s eq 'HASH';
 
@@ -181,8 +206,10 @@ sub resolve_location {
 {
     my $resp = $ua->get($SOTA_URL);
     if ($resp->is_success) {
-        my $spots = decode_json($resp->decoded_content);
-        if (ref $spots eq 'ARRAY') {
+        my $spots = eval { decode_json($resp->decoded_content) };
+        if ($@) {
+            warn "Parks'n'Peaks JSON parse failed: $@\n";
+        } elsif (ref $spots eq 'ARRAY') {
             for my $s (@$spots) {
                 next unless ref $s eq 'HASH';
 
@@ -242,7 +269,10 @@ sub resolve_location {
 {
     my $resp = $ua->get($WWFF_URL);
     if ($resp->is_success) {
-        my $data = decode_json($resp->decoded_content);
+        my $data = eval { decode_json($resp->decoded_content) };
+        if ($@) {
+            warn "WWFF JSON parse failed: $@\n";
+        } else {
         my $spots = $data->{RCD} // [];
         for my $s (@$spots) {
             next unless ref $s eq 'HASH';
@@ -308,6 +338,7 @@ sub resolve_location {
                 };
             }
         }
+        } # end JSON parse else
     } else {
         warn "WWFF fetch failed: " . $resp->status_line . "\n";
     }
