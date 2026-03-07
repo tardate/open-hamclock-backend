@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Variables to set
+GIT_REPO=https://github.com/komacke/open-hamclock-backend
 IMAGE_BASE=komacke/open-hamclock-backend
 VOACAP_VERSION=v.0.7.6
 HTTP_PORT=80
@@ -139,7 +140,7 @@ get_maps() {
     if [ ! -e ohb-maps.tar.zst ]; then
         echo
         echo "Getting ohb-maps from GitHub ..."
-        curl -fsSLO https://github.com/BrianWilkinsFL/open-hamclock-backend/releases/download/maps-v1/ohb-maps.tar.zst
+        curl -fsSLO $GIT_REPO/releases/download/maps-v1/ohb-maps.tar.zst
     fi
 }
 

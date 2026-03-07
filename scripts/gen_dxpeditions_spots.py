@@ -45,7 +45,7 @@ DXNEWS_DELAY    = 0.5  # seconds between DXNews page fetches
 HEADERS = {
     'User-Agent': (
         'OHB-DXPeds/2.0 '
-        '(+https://github.com/BrianWilkinsFL/open-hamclock-backend)'
+        '(+https://github.com/komacke/open-hamclock-backend)'
     )
 }
 

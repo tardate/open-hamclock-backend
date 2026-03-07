@@ -13,6 +13,8 @@
 #  gen_onta.pl -- POTA / SOTA / WWFF on-the-air spot aggregator
 #
 #  Part of the OHB project:
+#  https://github.com/komacke/open-hamclock-backend/tree/main
+#    formerly:
 #  https://github.com/BrianWilkinsFL/open-hamclock-backend/tree/main
 #
 #  Fetches live activator spots from POTA, SOTA (via Parks'n'Peaks),

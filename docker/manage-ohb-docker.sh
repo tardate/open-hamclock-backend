@@ -2,7 +2,7 @@
 
 # at release time, this value is set to the tagged release
 OHB_MANAGER_VERSION=latest
-GITHUB_LATEST_RELEASE_URL="https://api.github.com/repos/BrianWilkinsFL/open-hamclock-backend/releases/latest"
+GITHUB_LATEST_RELEASE_URL="https://api.github.com/repos/komacke/open-hamclock-backend/releases/latest"
 
 OHB_HTDOCS_DVC=ohb-htdocs
 IMAGE_BASE=komacke/open-hamclock-backend
@@ -839,7 +839,7 @@ services:
 
   pskr:
     container_name: pskr-mqtt-cache
-    image: komacke/pskr-mqtt-cache:1.4
+    image: komacke/pskr-mqtt-cache:1.5
     restart: unless-stopped
     networks:
       - ohb
