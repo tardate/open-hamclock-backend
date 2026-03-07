@@ -33,7 +33,7 @@ https://discord.gg/wb8ATjVn6M
 All we ask is if you fork OHB that you clearly list what parts of OHB you re-used and what parts you changed.
 ## 🤝 Contributing
 Bug reports and pull requests are welcome on GitHub at
-https://github.com/BrianWilkinsFL/open-hamclock-backend/issues
+https://github.com/komacke/open-hamclock-backend/issues
 ## 📄 Disclaimer 👉 [Disclaimer](./DISCLAIMER.md)
 ## Related
 - [ohb-pskreporter-proxy](https://github.com/BrianWilkinsFL/ohb-pskreporter-proxy)

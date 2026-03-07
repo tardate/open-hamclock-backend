@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-REPO="https://github.com/BrianWilkinsFL/open-hamclock-backend.git"
+REPO="https://github.com/komacke/open-hamclock-backend"
 BASE="/opt/hamclock-backend"
 VENV="$BASE/venv"
 
@@ -220,7 +220,7 @@ if [ -d "$BASE/.git" ]; then
   spinner $!
 else
   sudo rm -rf "$BASE"/*
-  sudo git clone "$REPO" "$BASE" >/dev/null &
+  sudo git clone "${REPO}.git" "$BASE" >/dev/null &
   spinner $!
 fi
 
@@ -322,7 +322,7 @@ STEP=$((STEP+1)); progress $STEP $STEPS
 echo -e "${BLU}==> Installing map assets${NC}"
 
 MAP_TAG="maps-v1"
-MAP_BASE="https://github.com/BrianWilkinsFL/open-hamclock-backend/releases/download/$MAP_TAG"
+MAP_BASE="$REPO/releases/download/$MAP_TAG"
 MAP_ARCHIVE="ohb-maps.tar.zst"
 MAP_SHA="$MAP_ARCHIVE.sha256"
 
