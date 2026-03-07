@@ -36,16 +36,15 @@ MPLCONFIGDIR=/opt/hamclock-backend/tmp/mpl
 PATH=/opt/hamclock-backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 LC_ALL=C
 LANG=C
-CRON_TZ=UTC
 
 44 * * * *     $VENV/bin/python3 $BASE/scripts/ssn_simple.py            >> $BASE/logs/ssn_simple.log 2>&1
 */5 * * * *    $VENV/bin/python3 $BASE/scripts/swind_simple.py          >> $BASE/logs/gen_swind_24hr.log 2>&1
-*/10 * * * *   $VENV/bin/python3 $BASE/scripts/bz_simple.py             >> $BASE/logs/bz_simple.log 2>&1
+0-58/2 * * * *   $VENV/bin/python3 $BASE/scripts/bz_simple.py             >> $BASE/logs/bz_simple.log 2>&1
 */30 * * * *   $VENV/bin/python3 $BASE/scripts/flux_simple.py           >> $BASE/logs/flux_simple.log 2>&1
-*/5 * * * *    $VENV/bin/python3 $BASE/scripts/xray_simple.py           >> $BASE/logs/xray_simple.log 2>&1
+1-57/4 * * * *    $VENV/bin/python3 $BASE/scripts/xray_simple.py           >> $BASE/logs/xray_simple.log 2>&1
 19 * * * *     $VENV/bin/python3 $BASE/scripts/kindex_simple.py         >> $BASE/logs/kindex_simple.log 2>&1
-* */3 * * *    $VENV/bin/python3 $BASE/scripts/dst_simple.py            >> $BASE/logs/dst_simple.log 2>&1
-35 0 * * *     $VENV/bin/python3 $BASE/scripts/gen_dxpeditions_spots.py >> $BASE/logs/dxpeds.log 2>&1
+20,50 * * * *    $VENV/bin/python3 $BASE/scripts/dst_simple.py            >> $BASE/logs/dst_simple.log 2>&1
+25 8 * * *     $VENV/bin/python3 $BASE/scripts/gen_dxpeditions_spots.py >> $BASE/logs/dxpeds.log 2>&1
 
 0 1 * * *      $BASE/scripts/gen_solarflux-history.sh   >> /opt/hamclock-backend/logs/gen_solarflux-history.log 2>&1
 0 1 * * *      $BASE/scripts/gen_ssn_history.pl         >> /opt/hamclock-backend/logs/gen_ssn_history.pl 2>&1
@@ -67,9 +66,9 @@ CRON_TZ=UTC
 # POTA, SOTA, WWFF
 0 3 * * 1 /opt/hamclock-backend/scripts/update_wwff_cache.pl >> /opt/hamclock-backend/logs/update_wwff_cache.log 2>&1
 0 4 * * 1,4 /opt/hamclock-backend/scripts/update_sota_cache.pl >> /opt/hamclock-backend/logs/update_sota_cache.log 2>&1
-*/5 * * * * /opt/hamclock-backend/scripts/gen_onta.pl >> /opt/hamclock-backend/logs/gen_onta.log 2>&1
+1-59/2 * * * * /opt/hamclock-backend/scripts/gen_onta.pl >> /opt/hamclock-backend/logs/gen_onta.log 2>&1
 
-*/3 * * * * /opt/hamclock-backend/scripts/gen_drap.sh >> /opt/hamclock-backend/logs/gen_drap.log 2>&1
+1-56/5 * * * * /opt/hamclock-backend/scripts/gen_drap.sh >> /opt/hamclock-backend/logs/gen_drap.log 2>&1
 
 20 2 * * * /opt/hamclock-backend/scripts/gen_cty_wt_mod.sh >> /opt/hamclock-backend/logs/gen_cty_wt_mod.sh 2>&1
 
@@ -82,6 +81,7 @@ CRON_TZ=UTC
 5 1,5,9,13,17,21 * * * /opt/hamclock-backend/scripts/update_aurora_maps.sh  >> /opt/hamclock-backend/logs/update_aurora_maps.log 2>&1
 0 0,12 * * *           /opt/hamclock-backend/scripts/update_wx_mb_maps.sh   >> /opt/hamclock-backend/logs/update_wx_mb_maps.log  2>&1
 
+# CSI period was 19 1-23/2 - Frequency increased to allow scripts to pull smaller chunks of data every 5 min to avoid rate limits
 */5 * * * * OPENMETEO_CHUNK=50 OPENMETEO_REQS_PER_RUN=1 /usr/bin/perl /opt/hamclock-backend/scripts/update_world_wx.pl >>/opt/hamclock-backend/logs/worldwx.log 2>&1
 
 # This script will be removed when clearskyinstitute ceases to operate.
