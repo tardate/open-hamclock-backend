@@ -88,3 +88,11 @@ These files never change or are unlikely to need change any time soon.
 - [x] VOACAP MUF MAP (REL/TOA) - proxied
 - [ ] VOACAP MUF MAP (REL/TOA) - non proxied
 - [x] RBN request and display
+
+## PSK Reporter without CSI
+
+OHB serves PSK Reporter data from its **own internal PSKR MQTT service**, not from Clear Sky Institute.
+
+`fetchPSKReporter.pl` accepts the normal HamClock query parameters, then queries our internal `pskr-mqtt-cache` service for matching spots. That cache is populated by an OHB-managed MQTT ingest pipeline that continuously collects and stores PSK Reporter traffic.
+
+As a result, PSK spot retrieval in OHB has **no dependency on CSI**. HamClock clients query OHB directly, and OHB returns HamClock-compatible results from infrastructure you control.

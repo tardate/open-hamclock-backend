@@ -1,12 +1,19 @@
 ## Attribution
+- [CSI for VOACAP](http://clearskyinstitute.com)
+- [ipgeolocation](http://ipgeolocation.io)
 - [MUF-RT](https://prop.kc2g.com/) Note: MUF-RT data for this map are from GIRO collected and used by permission from KC2G. You may not use OHB for commercial use if planning to utilize KC2G data. Link: https://prop.kc2g.com/acknowledgments/
 - [Space Weather Prediction Center](https://www.swpc.noaa.gov/)
 - NASA for [SDO](https://sdo.gsfc.nasa.gov/) and [STEREO](https://stereo.gsfc.nasa.gov/) images
+- [SILSO](https://www.sidc.be)
+- [OpenMeteo](https://open-meteo.com/)
 - National Research Council Canada [10.7 cm solar flux](https://www.spaceweather.gc.ca/forecast-prevision/solar-solaire/solarflux/sx-en.php) data
 - [HamWeekly.com](https://hamweekly.com/)
+- [OpenWeatherMap](https://openweathermap.org/)
+- [Reverse Beacon Network](https://www.reversebeacon.net/)
 - [NG3K.com](https://www.ng3k.com/)
 - [ARNewsline.com](https://www.arnewsline.org/)
 - [PSKReporter](https://pskreporter.info/) by Phillip Gladstone
+- [AMSAT](https://www.amsat.org/)
 - [WSPR Live](https://wspr.live/)
 - [WA7BNM Weekend Contests Calendar](https://www.contestcalendar.com/)
 - [Amateur Radio Country Files](https://www.country-files.com/big-cty/)
