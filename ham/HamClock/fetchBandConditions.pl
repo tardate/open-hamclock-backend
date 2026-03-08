@@ -1,130 +1,90 @@
 #!/usr/bin/perl
+#
+# fetchBandConditions.pl - HamClock band conditions proxy to voacap-service
+#
+# Replaces the original VOACAP-calling implementation with a thin HTTP proxy
+# that forwards all query parameters to the voacap-service container and
+# streams the response back to HamClock unchanged.
+#
+# The voacap-service handles all VOACAP execution, concurrency, and output
+# formatting. This script is a drop-in replacement — HamClock sees identical
+# wire protocol output.
+#
+# Query parameters (all required, passed through verbatim):
+# YEAR, MONTH, RXLAT, RXLNG, TXLAT, TXLNG, PATH, POW, MODE, TOA
+# SSN (optional - if omitted, voacap-service uses ssn-31.txt or estimates)
+#
+# Configuration (environment variables):
+# VOACAP_SERVICE_URL Base URL of the voacap-service
+# Default: http://localhost:8080
+#
+# Author: Open HamClock Backend (OHB) project
+# License: AGPLv3
+
 use strict;
 use warnings;
-use CGI qw(:standard);
+use LWP::UserAgent;
 
-# ---------------------------------------------------------------------------
-# fetchBandConditions.pl — local drop-in replacement for CSI's endpoint.
-# Delegates to voacap_bandconditions.py and returns identical output.
-# ---------------------------------------------------------------------------
+# —————————————————————————
+# Configuration
+# —————————————————————————
 
-my $PYTHON = '/opt/hamclock-backend/venv/bin/python3';
-if (! -e $PYTHON || ! -x $PYTHON) {
-	$PYTHON = '/usr/bin/python3';
-}
-my $SCRIPT  = '/opt/hamclock-backend/scripts/voacap_bandconditions.py';
+my $SERVICE_URL = $ENV{VOACAP_SERVICE_URL} || 'http://voacap-service:8080';
+my $ENDPOINT = "$SERVICE_URL/fetchBandConditions";
+my $TIMEOUT = 35; # seconds — matches voacap-service harakiri timeout
 
-# ---------------------------------------------------------------------------
-# Parse query string parameters
-# ---------------------------------------------------------------------------
-my $q = CGI->new;
+# —————————————————————————
+# Pass query string through verbatim — no parsing, no validation needed here.
+# voacap-service returns 400 with a clear message if params are missing.
+# —————————————————————————
 
-my $year  = $q->param('YEAR')  || '';
-my $month = $q->param('MONTH') || '';
-my $utc   = $q->param('UTC')   || '';
-my $txlat = $q->param('TXLAT') || '';
-my $txlng = $q->param('TXLNG') || '';
-my $rxlat = $q->param('RXLAT') || '';
-my $rxlng = $q->param('RXLNG') || '';
-my $path  = $q->param('PATH')  // '0';
-my $pow   = $q->param('POW')   // '100';
-my $mode  = $q->param('MODE')  // '19';
-my $toa   = $q->param('TOA')   // '3.0';
-my $ssn   = $q->param('SSN')   || '';
+my $qs = $ENV{QUERY_STRING} || $ARGV[0] || '';
 
-# ---------------------------------------------------------------------------
-# Validate required parameters
-# ---------------------------------------------------------------------------
-my @missing;
-push @missing, 'YEAR'  unless $year  =~ /^\d{4}$/;
-push @missing, 'MONTH' unless $month =~ /^\d{1,2}$/ && $month >= 1 && $month <= 12;
-push @missing, 'UTC'   unless $utc   =~ /^\d{1,2}$/ && $utc   >= 0 && $utc   <= 23;
-push @missing, 'TXLAT' unless $txlat =~ /^-?\d+(\.\d+)?$/;
-push @missing, 'TXLNG' unless $txlng =~ /^-?\d+(\.\d+)?$/;
-push @missing, 'RXLAT' unless $rxlat =~ /^-?\d+(\.\d+)?$/;
-push @missing, 'RXLNG' unless $rxlng =~ /^-?\d+(\.\d+)?$/;
+my $ua = LWP::UserAgent->new(timeout => $TIMEOUT);
+my $url = $qs ? "$ENDPOINT?$qs" : $ENDPOINT;
+my $res = $ua->get($url);
 
-if (@missing) {
-    print $q->header('text/plain', '400 Bad Request');
-    print "Missing or invalid parameters: " . join(', ', @missing) . "\n";
-    exit 1;
+if ($res->is_success) {
+	print $res->decoded_content;
+} else {
+	# Emit zero output so HamClock degrades gracefully rather than showing
+	# an error, then log the failure to stderr for the OHB operator.
+	print STDERR "fetchBandConditions: voacap-service error: ",
+	$res->status_line, " ($url)\n";
+	emit_zero_output($qs);
+	exit 1;
 }
 
-# Sanitize numerics — prevent shell injection
-for ($year, $month, $utc, $txlat, $txlng, $rxlat, $rxlng,
-     $path, $pow, $mode, $toa, $ssn) {
-    s/[^0-9.\-]//g;
+exit 0;
+
+# —————————————————————————
+# Fallback zero output — keeps HamClock happy if the service is unreachable.
+# Parses just enough from the query string to echo params correctly.
+# —————————————————————————
+
+sub emit_zero_output {
+	my ($qs) = @_;
+	my %p;
+	for my $pair (split /&/, $qs) {
+		my ($k, $v) = split /=/, $pair, 2;
+		$p{$k} = $v if defined $k;
+	}
+	my $pow = int($p{POW} || 100);
+	my $mode = int($p{MODE} || 19);
+	my $toa = $p{TOA} || '3';
+	my $path = int($p{PATH} || 0);
+	my $ssn = int($p{SSN} || 0);
+	my $mode_label = $mode == 19 ? 'CW'
+		: $mode == 14 ? 'FT8'
+		: $mode == 15 ? 'FT4'
+		: $mode == 17 ? 'RTTY'
+		: $mode == 20 ? 'AM'
+		: ($mode == 0 || $mode == 1) ? 'SSB'
+		: "MODE$mode";
+	my $path_label = $path ? 'LP' : 'SP';
+	my $zero_row = join(',', ('0.00') x 9);
+	print "$zero_row\n";
+	printf "%dW,%s,TOA>%s,%s,S=%d\n", $pow, $mode_label, $toa, $path_label, $ssn;
+	for my $h (1..23) { print "$h $zero_row\n" }
+	print "0 $zero_row\n";
 }
-
-# Read SSN from local file
-if (!$ssn || $ssn !~ /^\d+(\.\d+)?$/) {
-    my $ssn_dir  = '/opt/hamclock-backend/htdocs/ham/HamClock/ssn';
-    my ($ssn_file) = glob("$ssn_dir/ssn-*.txt");
-    my @t     = gmtime(time());
-    my $today = sprintf("%04d %02d %02d", $t[5]+1900, $t[4]+1, $t[3]);
-    $ssn = 42;  # fallback
-    if ($ssn_file && open(my $fh, '<', $ssn_file)) {
-        my $last = 39;
-        while (<$fh>) {
-            if (/^(\d{4})\s+(\d{2})\s+(\d{2})\s+(\d+)/) {
-                my $date = "$1 $2 $3";
-                $last = $4;
-                $ssn  = $4 if $date eq $today;
-            }
-        }
-        $ssn = $last if $ssn == 42;  # today not in file yet — use most recent
-    }
-    $ssn = 0 if $ssn < 0;  # floor to avoid degenerate predictions
-}
-
-# ---------------------------------------------------------------------------
-# Build command (use list form to avoid shell injection)
-# ---------------------------------------------------------------------------
-my @cmd = (
-    $PYTHON, $SCRIPT,
-    '--year',   $year,
-    '--month',  $month,
-    '--utc',    $utc,
-    '--txlat',  $txlat,
-    '--txlng',  $txlng,
-    '--rxlat',  $rxlat,
-    '--rxlng',  $rxlng,
-    '--path',   $path,
-    '--pow',    $pow,
-    '--mode',   $mode,
-    '--toa',    $toa,
-    '--ssn',    $ssn,
-);
-
-
-# ---------------------------------------------------------------------------
-# Run and capture output
-# ---------------------------------------------------------------------------
-my $output = '';
-my $errors = '';
-
-{
-    local $/;
-    open(my $fh, '-|', @cmd) or do {
-        print $q->header('text/plain', '500 Internal Server Error');
-        print "Failed to execute prediction script: $!\n";
-        exit 1;
-    };
-    $output = <$fh>;
-    close $fh;
-}
-
-my $exit_code = $? >> 8;
-
-if ($exit_code != 0 || !defined $output || $output eq '') {
-    print $q->header('text/plain', '500 Internal Server Error');
-    print "Prediction script returned no output (exit $exit_code)\n";
-    exit 1;
-}
-
-# ---------------------------------------------------------------------------
-# Return result — same content-type as CSI's server
-# ---------------------------------------------------------------------------
-print $q->header('text/plain');
-print $output;
-
