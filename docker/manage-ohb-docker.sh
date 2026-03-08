@@ -839,7 +839,7 @@ services:
 
   pskr:
     container_name: pskr-mqtt-cache
-    image: komacke/pskr-mqtt-cache:1.5
+    image: komacke/pskr-mqtt-cache:1.6
     restart: unless-stopped
     networks:
       - ohb
