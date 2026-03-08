@@ -5,7 +5,4 @@
 #vim
 
 # packages required by hamclock-backend
-python3
-python3-numpy
-python3-pip
 zstd

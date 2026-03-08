@@ -3,28 +3,22 @@
 #######################################################
 
 #######################################################
-# build voacap
+# build support artifacts
 #######################################################
-FROM debian:13.3-slim AS build-voacap
+FROM debian:13.3-slim AS build-support
 
 USER root
 WORKDIR /opt
 
 # Install voap build prerequisites
-COPY docker/package-list-voacap.txt /opt
-COPY docker/dvoacap.tgz /opt
+COPY docker/package-list-support.txt /opt
 COPY docker/ohb-maps.tar.zst /opt
 
-# Build the voacap artifacts and untar maps
+# Build support artifacts: untar maps
 RUN apt update && \
-    apt install -y --no-install-recommends $(grep -v '^#' package-list-voacap.txt) && \
+    apt install -y --no-install-recommends $(grep -v '^#' package-list-support.txt) && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /opt/package-list-voacap.txt && \
-    # \
-    # install voacap and then copy the artifacts into the main image \
-    tar xzf dvoacap.tgz && \
-    pip install dvoacap-python-main/. --break-system-packages && \
-    rm -Rf dvoacap-python-main && \
+    rm -rf /var/lib/apt/lists/* /opt/package-list-support.txt && \
     # \
     # untar the maps so we don't get the tgz in the layers \
     mkdir -p ohb-maps && \
@@ -48,10 +42,8 @@ RUN apt update && \
     rm -rf /var/lib/apt/lists/* /opt/package-list.txt
 
 # the OHB tree
-COPY --exclude=docker/dvoacap.tgz --exclude=docker/ohb-maps.tar.zst . /opt/hamclock-backend/
-# Copy voacap after python was installed above
-COPY --from=build-voacap /usr/local/lib/python3.13/dist-packages/ /usr/local/lib/python3.13/dist-packages/
-COPY --from=build-voacap /opt/ohb-maps /opt/hamclock-backend/ham/HamClock/maps
+COPY --exclude=docker/ohb-maps.tar.zst . /opt/hamclock-backend/
+COPY --from=build-support /opt/ohb-maps /opt/hamclock-backend/ham/HamClock/maps
 
 # Install hamclock-backend
 RUN cd /opt/hamclock-backend && \
