@@ -15,7 +15,7 @@ All maps + data feeds are generated on your own compute. Our project only uses p
 
 and
 
-> OHB project proxies VOACAP DE-DX and VOACAP REL/TOA from ClearSkyInstitute.com.
+> OHB project proxies VOACAP REL/TOA from ClearSkyInstitute.com.
 > All data feeds are attributed in [our attribution page](ATTRIBUTION.md)
 
 ## Compatibility 👉 [Compatibility](COMPATIBILITY.md)
