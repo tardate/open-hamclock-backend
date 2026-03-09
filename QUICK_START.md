@@ -1,5 +1,7 @@
 ## 🚀 Quick Start
 
+Because of recent changes to depend on other docker containers, we recommend the docker install over the native OS install. We are considering a mixed install where the other supporting docker containers are containerized (requiring you run docker) and enable the OHB install to be on your native OS. Input on this appreciated.
+
 ### Install in a container with Docker
 Download the manager utility that masks all the Docker details. Visit the releases page:
 
