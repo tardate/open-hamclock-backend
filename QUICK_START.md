@@ -1,5 +1,27 @@
 ## 🚀 Quick Start
 
+Because of recent changes to depend on other docker containers, we recommend the docker install over the native OS install. We are considering a mixed install where the other supporting docker containers are containerized (requiring you run docker) and enable the OHB install to be on your native OS. Input on this appreciated.
+
+### Install in a container with Docker
+Download the manager utility that masks all the Docker details. Visit the releases page:
+
+👉 [Releases](https://github.com/BrianWilkinsFL/open-hamclock-backend/releases)
+and download the asset: **Manage Docker installs**.
+
+Make it executable:
+```
+chmod +x manage-ohb-docker.sh
+```
+
+Run it. Substitute the version you want. This installs v0.16:
+```
+.\manage-ohb-docker.sh install -t 0.16
+```
+
+### Full Docker Install Instructions
+Full docker installation details:
+👉 [Detailed Installation Instructions](docker/README.md)
+
 ### Install natively on your OS
 Clone and run the installer:
 
@@ -22,22 +44,6 @@ sudo ls /opt/hamclock-backend/htdocs/ham/HamClock/maps | head
 
 If you see data and maps, OHB is running.
 
-### Install in a container with Docker
-Download the manager utility that masks all the Docker details. Visit the releases page:
-
-👉 [Releases](https://github.com/BrianWilkinsFL/open-hamclock-backend/releases)
-and download the asset: **Manage Docker installs**.
-
-Make it executable:
-```
-chmod +x manage-ohb-docker.sh
-```
-
-Run it. Substitute the version you want. This installs v0.16:
-```
-.\manage-ohb-docker.sh install -t 0.16
-```
-
-### Full instructions
+### Full Native Install Instructions
 Full installation details:
 👉 [Detailed Installation Instructions](INSTALL.md)
