@@ -1,5 +1,8 @@
 # 🛟  📡 OHB — Open HamClock Backend
 
+## Latest Announcements
+For latest information, visit the [announcements page](ANNOUNCEMENTS.md).
+
 ## What is OHB?
 OHB is an open-source, backend replacement for HamClock. It maintains the HamClock interface by dynamically generating live propagation data, maps, and feeds. It can be hosted on compute as small as a Raspberry Pi3B+.
 
