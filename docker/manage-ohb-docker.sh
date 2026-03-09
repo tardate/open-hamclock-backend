@@ -351,17 +351,19 @@ is_ohb_installed() {
         get_current_http_port
         get_current_https_port
         get_current_pskr_image_tag
-        echo "  OHB version:         '$CURRENT_TAG'"
-        echo "  Docker image:        '$CURRENT_IMAGE_BASE:$CURRENT_TAG'"
-        echo "  Docker image (pskr): '$CURRENT_PSKR_IMAGE_BASE:$CURRENT_PSKR_TAG'"
-        echo "  HTTP PORT in use:    '$CURRENT_HTTP_PORT'"
+        get_current_voacap_image_tag
+        echo "  OHB version:           '$CURRENT_TAG'"
+        echo "  Docker image:          '$CURRENT_IMAGE_BASE:$CURRENT_TAG'"
+        echo "  Docker image (pskr):   '$CURRENT_PSKR_IMAGE_BASE:$CURRENT_PSKR_TAG'"
+        echo "  Docker image (voacap): '$CURRENT_VOACAP_IMAGE_BASE:$CURRENT_VOACAP_TAG'"
+        echo "  HTTP PORT in use:      '$CURRENT_HTTP_PORT'"
         if [ -n "$CURRENT_HTTPS_PORT" ]; then
-            echo "  HTTPS PORT in use:   '$CURRENT_HTTPS_PORT'"
+            echo "  HTTPS PORT in use:     '$CURRENT_HTTPS_PORT'"
         fi
         if [ "$STICKY_CERT_PATH" != "-" ]; then
-            echo "  HTTPS cert path:     '$STICKY_CERT_PATH'"
+            echo "  HTTPS cert path:       '$STICKY_CERT_PATH'"
         fi
-        echo -n "  Dashboard enabled:   "
+        echo -n "  Dashboard enabled:     "
         if [ -n "$STICKY_DASHBOARD_INSTALL" ]; then
             echo "'$STICKY_DASHBOARD_INSTALL'"
         else
@@ -612,6 +614,14 @@ get_current_pskr_image_tag() {
     fi
 }
 
+get_current_voacap_image_tag() {
+    CURRENT_VOACAP_DOCKER_IMAGE=$(docker inspect voacap-service 2>/dev/null | jq -r '.[0].Config.Image')
+    if [ "$CURRENT_VOACAP_DOCKER_IMAGE" != 'null' ]; then
+        CURRENT_VOACAP_TAG=${CURRENT_VOACAP_DOCKER_IMAGE#*:}
+        CURRENT_VOACAP_IMAGE_BASE=${CURRENT_VOACAP_DOCKER_IMAGE%:*}
+    fi
+}
+
 determine_http_port() {
     get_current_http_port
 
@@ -849,6 +859,48 @@ services:
         target: /data
         volume:
           subpath: pskr
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "2"
+    depends_on:
+      web:
+        condition: service_healthy
+
+  voacap-service:
+    image: komacke/voacap-service:latest
+    container_name: voacap-service
+    restart: unless-stopped
+    environment:
+      LOG_LEVEL: INFO
+      # SSN_MODE: latest or average (default: latest)
+      # VOACAP_SSN_MODE: average
+    networks:
+      - ohb
+    volumes:
+      # Mount the OHB SSN directory read-only so the container can read
+      # ssn-31.txt that is updated by your existing OHB cron jobs on the host.
+      # The path inside the container matches VOACAP_SSN_FILE default so no
+      # extra env var is needed.
+      #- /opt/hamclock-backend/htdocs/ham/HamClock/ssn:/opt/hamclock-backend/htdocs/ham/HamClock/ssn:ro
+      - type: volume
+        source: ohb-htdocs
+        target: /opt/hamclock-backend/htdocs/ham/HamClock/ssn
+        volume:
+          subpath: ham/HamClock/ssn
+        read_only: true
+    shm_size: "64mb"    # /dev/shm for fast VOACAP temp files
+    mem_limit: "512m"
+    cpus: "2.0"
+    tmpfs:
+      - /run:size=8m
+      - /tmp:size=32m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     logging:
       options:
         max-size: "10m"
