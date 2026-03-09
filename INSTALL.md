@@ -1,14 +1,16 @@
 ## Install:
-(NOTE: to run OHB in docker, visit https://github.com/komacke/open-hamclock-backend/blob/main/docker/README.md)
+
+Because of recent changes to depend on other docker containers, we recommend the docker install over the native OS install. We are considering a mixed install where the other supporting docker containers are containerized (requiring you run docker) and enable the OHB install to be on your native OS. Input on this appreciated.
+
+(NOTE: to run OHB in docker, visit [the Docker instructions](docker/README.md))
+
+## The the install:
 
 ```bash
    # Confirmed working in aws t3-micro Ubuntu 24.x LTS instance
    wget -O install_ohb.sh https://raw.githubusercontent.com/komacke/open-hamclock-backend/refs/heads/main/aws/install_ohb.sh
    chmod +x install_ohb.sh
    sudo ./install_ohb.sh
-   wget -O install_voacap.sh https://raw.githubusercontent.com/komacke/open-hamclock-backend/refs/heads/main/aws/install_voacap.sh
-   chmod +x install_voacap.sh
-   sudo ./install_voacap.sh
 ```
 ## Selecting map image sizes during install
 
