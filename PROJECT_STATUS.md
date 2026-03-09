@@ -34,13 +34,13 @@ Note: Anything under maps/ is considered a "Core Map" in HamClock
 These are replaced dynamically in the background on the target host per the baselined [crontab](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/scripts/crontab).
 
 - [x] [maps/Clouds*](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/scripts/update_cloud_maps.sh) - Clouds map display
-- [x] maps/Countries* - reuse from CSI; no need to regenerate
+- [x] maps/Countries* - copied from CSI and hosted locally; no need to regenerate
 - [x] [maps/Wx-mB*](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/scripts/update_wx_mb_maps.sh) - Weather map display (millibar)
 - [x] [maps/Wx-in*](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/scripts/update_wx_mb_maps.sh) - Weather map display (inches)
 - [x] [maps/Aurora](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/scripts/update_aurora_maps.sh) - Aurora map display
 - [x] [maps/DRAP*](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/scripts/update_drap_maps.sh) - DRAP map display
 - [x] [maps/MUF-RT*](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/scripts/kc2g_muf_heatmap.sh) - MUF RT display based on kc2g propagation map engine
-- [x] maps/Terrain* - reuse from CSI; no need to regenerate; Terrain map display
+- [x] maps/Terrain* - copied from CSI and hosted locally; no need to regenerate; Terrain map display
 - [x] [SDO/*](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/scripts/update_all_sdo.sh) - images of the Sun for the SDO pane
 
 ### Dynamic Web Endpoints
@@ -50,7 +50,7 @@ These are endpoints that dynamically return data based on query parameters to th
 - [x] [ham/HamClock/version.pl](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/ham/HamClock/version.pl)
 - [x] [ham/HamClock/wx.pl](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/ham/HamClock/wx.pl)
 - [x] [ham/HamClock/fetchIPGeoloc.pl](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/ham/HamClock/fetchIPGeoloc.pl) - requires free tier 1000 req per day account and API key
-- [ ] ham/HamClock/fetchBandConditions.pl - implemented however bypassed via proxied
+- [x] [ham/HamClock/fetchBandConditions.pl](https://github.com/komacke/open-hamclock-backend/blob/main/ham/HamClock/fetchBandConditions.pl) - implemented in a separate container service on same host
 - [ ] ham/HamClock/fetchVOACAPArea.pl - proxied by CSI until we can work out complex task
 - [ ] ham/HamClock/fetchVOACAP-MUF.pl - proxied by CSI until we can work out complex task
 - [ ] ham/HamClock/fetchVOACAP-TOA.pl - proxied by CSI until we can work out complex task
@@ -83,8 +83,7 @@ These files never change or are unlikely to need change any time soon.
 - [x] Amateur Satellites data generation, pull and display + [active AMSAT status satellite filter](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/scripts/filter_amsat_active.pl)
 - [x] PSK Reporter WSPR request and display
 - [x] PSK Reporter Spots request and display (MQTT based - FAST)
-- [X] VOACAP DE DX - proxied
-- [ ] VOACAP DE DX - non proxied
+- [x] VOACAP DE DX (uses new docker container)
 - [x] VOACAP MUF MAP (REL/TOA) - proxied
 - [ ] VOACAP MUF MAP (REL/TOA) - non proxied
 - [x] RBN request and display
@@ -96,3 +95,11 @@ OHB serves PSK Reporter data from its **own internal PSKR MQTT service**, not fr
 `fetchPSKReporter.pl` accepts the normal HamClock query parameters, then queries our internal `pskr-mqtt-cache` service for matching spots. That cache is populated by an OHB-managed MQTT ingest pipeline that continuously collects and stores PSK Reporter traffic.
 
 As a result, PSK spot retrieval in OHB has **no dependency on CSI**. HamClock clients query OHB directly, and OHB returns HamClock-compatible results from infrastructure you control.
+
+## VOACAP DE/DX without CSI
+
+OHB serves VOACAP DE/DX data from its **own internal voacap service**, not from Clear Sky Institute.
+
+`fetchBandConditions.pl` accepts the normal HamClock query parameters, then queries our internal `voacap-service` service for generated results.
+
+As a result, VOACAP DE/DX retrieval in OHB has **no dependency on CSI**. HamClock clients query OHB directly, and OHB returns HamClock-compatible results from infrastructure you control.
