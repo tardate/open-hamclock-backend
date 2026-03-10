@@ -5,7 +5,7 @@ Because of recent changes to depend on other docker containers, we recommend the
 ### Install in a container with Docker
 Download the manager utility that masks all the Docker details. Visit the releases page:
 
-👉 [Releases](https://github.com/BrianWilkinsFL/open-hamclock-backend/releases)
+👉 [Releases](https://github.com/komacke/open-hamclock-backend/releases/latest)
 and download the asset: **Manage Docker installs**.
 
 Make it executable:
