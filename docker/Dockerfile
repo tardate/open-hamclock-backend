@@ -10,7 +10,7 @@ FROM debian:13.3-slim AS build-support
 USER root
 WORKDIR /opt
 
-# Install voap build prerequisites
+# Install build prerequisites
 COPY docker/package-list-support.txt /opt
 COPY docker/ohb-maps.tar.zst /opt
 
