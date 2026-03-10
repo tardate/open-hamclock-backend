@@ -849,7 +849,7 @@ services:
 
   pskr:
     container_name: pskr-mqtt-cache
-    image: komacke/pskr-mqtt-cache:1.6
+    image: komacke/pskr-mqtt-cache:1.8
     restart: unless-stopped
     networks:
       - ohb
@@ -868,7 +868,7 @@ services:
         condition: service_healthy
 
   voacap-service:
-    image: komacke/voacap-service:1.0
+    image: komacke/voacap-service:1.2
     container_name: voacap-service
     restart: unless-stopped
     environment:
@@ -895,12 +895,6 @@ services:
     tmpfs:
       - /run:size=8m
       - /tmp:size=32m
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
     logging:
       options:
         max-size: "10m"
