@@ -90,7 +90,6 @@ RUN cd /opt/hamclock-backend && \
     /usr/sbin/lighty-enable-mod accesslog && \
     /usr/sbin/lighttpd-enable-mod hamclock && \
     /usr/sbin/lighttpd-enable-mod ohb-dashboard && \
-    /usr/sbin/lighttpd-enable-mod voacap-proxy && \
     /usr/sbin/lighttpd-enable-mod ssl && \
     openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
         -keyout /etc/lighttpd/server.pem -out /etc/lighttpd/server.pem \

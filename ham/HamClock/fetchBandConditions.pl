@@ -16,7 +16,7 @@
 #
 # Configuration (environment variables):
 # VOACAP_SERVICE_URL Base URL of the voacap-service
-# Default: http://localhost:8080
+# Default: http://voacap-service:8080
 #
 # Author: Open HamClock Backend (OHB) project
 # License: AGPLv3
