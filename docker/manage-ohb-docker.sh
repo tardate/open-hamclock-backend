@@ -868,7 +868,7 @@ services:
         condition: service_healthy
 
   voacap-service:
-    image: komacke/voacap-service:1.2
+    image: komacke/voacap-service:latest
     container_name: voacap-service
     restart: unless-stopped
     environment:
@@ -882,7 +882,6 @@ services:
       # ssn-31.txt that is updated by your existing OHB cron jobs on the host.
       # The path inside the container matches VOACAP_SSN_FILE default so no
       # extra env var is needed.
-      #- /opt/hamclock-backend/htdocs/ham/HamClock/ssn:/opt/hamclock-backend/htdocs/ham/HamClock/ssn:ro
       - type: volume
         source: ohb-htdocs
         target: /opt/hamclock-backend/htdocs/ham/HamClock/ssn
@@ -894,7 +893,7 @@ services:
     cpus: "2.0"
     tmpfs:
       - /run:size=8m
-      - /tmp:size=32m
+      - /tmp:size=1024m
     logging:
       options:
         max-size: "10m"

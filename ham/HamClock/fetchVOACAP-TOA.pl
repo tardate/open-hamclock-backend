@@ -30,7 +30,7 @@ use LWP::UserAgent;
 # —————————————————————————
 
 my $SERVICE_URL = $ENV{VOACAP_SERVICE_URL} || 'http://voacap-service:8080';
-my $ENDPOINT = "$SERVICE_URL/fetchVOACAPArea.pl";
+my $ENDPOINT = "$SERVICE_URL/fetchVOACAP-TOA.pl";
 my $TIMEOUT = 300; 
 
 # —————————————————————————
