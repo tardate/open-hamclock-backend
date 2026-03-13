@@ -16,11 +16,6 @@ All maps + data feeds are generated on your own compute. Our project only uses p
 > Elwood Downey, WB0OEW.
 > We extend our sincere condolences to the Downey family.
 
-and
-
-> OHB project proxies VOACAP REL/TOA from ClearSkyInstitute.com.
-> All data feeds are attributed in [our attribution page](ATTRIBUTION.md)
-
 ## Compatibility 👉 [Compatibility](COMPATIBILITY.md)
 ## 💬 Join us on Discord
 We are building a community-powered backend to keep HamClock running. \
