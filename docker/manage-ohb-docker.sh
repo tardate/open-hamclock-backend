@@ -406,7 +406,7 @@ is_docker_installed() {
     JQ_RETVAL=$?
 
     if [ $DOCKERD_RETVAL -ne 0 ]; then
-        echo "ERROR: docker is not installed. Could not find dockerd." >&2
+        echo "ERROR: docker is not installed. Could not find docker." >&2
         RETVAL=$DOCKERD_RETVAL
     elif [ $DOCKER_COMPOSE_RETVAL -ne 0 ]; then
         echo "ERROR: docker compose is not installed but we found docker. Try installing docker compose." >&2
@@ -868,7 +868,7 @@ services:
         condition: service_healthy
 
   voacap-service:
-    image: komacke/voacap-service:1.3
+    image: komacke/voacap-service:1.4
     container_name: voacap-service
     restart: unless-stopped
     environment:
