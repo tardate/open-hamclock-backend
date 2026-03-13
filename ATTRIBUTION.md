@@ -1,5 +1,4 @@
 ## Attribution
-- [CSI](http://clearskyinstitute.com) for VOACAP REL/TOA
 - [ipgeolocation](http://ipgeolocation.io)
 - [MUF-RT](https://prop.kc2g.com/) Note: MUF-RT data for this map are from GIRO collected and used by permission from KC2G. You may not use OHB for commercial use if planning to utilize KC2G data. Link: https://prop.kc2g.com/acknowledgments/
 - [Space Weather Prediction Center](https://www.swpc.noaa.gov/)
