@@ -2,6 +2,8 @@
 
 OHB is and always will be free to use and download. 
 
+OHB serves data from its **own internal services**, not from Clear Sky Institute.
+
 Each supporting file type has a data generation script. These scripts operate on a schedule that is defined in a [crontab](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/scripts/crontab). The crontab has been specifically tuned to match as close as possible the original ClearSkyInstitute data generation times and be friendly to CPU/MEM on the host. 
 
 [Installers](https://github.com/BrianWilkinsFL/open-hamclock-backend/tree/main/aws) are used to setup, configure and install OHB. Container based install is the simplest path go get OHB up and running. See here for [install steps](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/INSTALL.md)
@@ -51,9 +53,9 @@ These are endpoints that dynamically return data based on query parameters to th
 - [x] [ham/HamClock/wx.pl](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/ham/HamClock/wx.pl)
 - [x] [ham/HamClock/fetchIPGeoloc.pl](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/ham/HamClock/fetchIPGeoloc.pl) - requires free tier 1000 req per day account and API key
 - [x] [ham/HamClock/fetchBandConditions.pl](https://github.com/komacke/open-hamclock-backend/blob/main/ham/HamClock/fetchBandConditions.pl) - implemented in a separate container service on same host
-- [ ] ham/HamClock/fetchVOACAPArea.pl - proxied by CSI until we can work out complex task
-- [ ] ham/HamClock/fetchVOACAP-MUF.pl - proxied by CSI until we can work out complex task
-- [ ] ham/HamClock/fetchVOACAP-TOA.pl - proxied by CSI until we can work out complex task
+- [x] [ham/HamClock/fetchVOACAPArea.pl](https://github.com/komacke/open-hamclock-backend/blob/main/ham/HamClock/fetchVOACAPArea.pl) - implemented in a separate container service on same host
+- [x] [ham/HamClock/fetchVOACAP-MUF.pl](https://github.com/komacke/open-hamclock-backend/blob/main/ham/HamClock/fetchVOACAP-MUF.pl) - implemented in a separate container service on same host
+- [x] [ham/HamClock/fetchVOACAP-TOA.pl](https://github.com/komacke/open-hamclock-backend/blob/main/ham/HamClock/fetchVOACAP-TOA.pl) - implemented in a separate container service on same host
 - [x] [ham/HamClock/fetchPSKReporter.pl](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/ham/HamClock/fetchPSKReporter.pl) 
 - [x] [ham/HamClock/fetchWSPR.pl](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/ham/HamClock/fetchWSPR.pl)
 - [x] [ham/HamClock/fetchRBN.pl](https://github.com/BrianWilkinsFL/open-hamclock-backend/blob/main/ham/HamClock/fetchRBN.pl)
@@ -84,22 +86,6 @@ These files never change or are unlikely to need change any time soon.
 - [x] PSK Reporter WSPR request and display
 - [x] PSK Reporter Spots request and display (MQTT based - FAST)
 - [x] VOACAP DE DX (uses new docker container)
-- [x] VOACAP MUF MAP (REL/TOA) - proxied
-- [ ] VOACAP MUF MAP (REL/TOA) - non proxied
+- [x] VOACAP MUF MAP (REL/TOA) (uses new docker container)
 - [x] RBN request and display
 
-## PSK Reporter without CSI
-
-OHB serves PSK Reporter data from its **own internal PSKR MQTT service**, not from Clear Sky Institute.
-
-`fetchPSKReporter.pl` accepts the normal HamClock query parameters, then queries our internal `pskr-mqtt-cache` service for matching spots. That cache is populated by an OHB-managed MQTT ingest pipeline that continuously collects and stores PSK Reporter traffic.
-
-As a result, PSK spot retrieval in OHB has **no dependency on CSI**. HamClock clients query OHB directly, and OHB returns HamClock-compatible results from infrastructure you control.
-
-## VOACAP DE/DX without CSI
-
-OHB serves VOACAP DE/DX data from its **own internal voacap service**, not from Clear Sky Institute.
-
-`fetchBandConditions.pl` accepts the normal HamClock query parameters, then queries our internal `voacap-service` service for generated results.
-
-As a result, VOACAP DE/DX retrieval in OHB has **no dependency on CSI**. HamClock clients query OHB directly, and OHB returns HamClock-compatible results from infrastructure you control.
