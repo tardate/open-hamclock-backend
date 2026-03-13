@@ -398,7 +398,7 @@ upgrade_ohb() {
 }
 
 is_docker_installed() {
-    DOCKERD_VERSION=$(dockerd -v 2>/dev/null)
+    DOCKERD_VERSION=$(docker -v 2>/dev/null)
     DOCKERD_RETVAL=$?
     DOCKER_COMPOSE_VERSION=$(docker compose version 2>/dev/null)
     DOCKER_COMPOSE_RETVAL=$?
