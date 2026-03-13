@@ -43,12 +43,28 @@ ROW_ORDER = [
 BIN_STARTS = [0, 3, 6, 9, 12, 15, 18, 21]
 
 
-def fetch_text(url: str) -> str:
-    r = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
-    r.raise_for_status()
-    r.encoding = "utf-8"
-    return r.text
-
+def fetch_text(url: str) -> str | None: # Changed return type to allow returning None on error
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
+        r.raise_for_status()
+        r.encoding = 'utf-8'
+        return r.text
+    except requests.exceptions.HTTPError as errh:
+        # Handles 4xx or 5xx errors
+        print(f"HTTP Error: {errh}", file=sys.stderr)
+        return None
+    except requests.exceptions.ConnectionError as conerr:
+        # Handles connection issues (e.g., DNS failure, refused connection)
+        print(f"Connection Error: {conerr}", file=sys.stderr)
+        return None
+    except requests.exceptions.ReadTimeout as errrt:
+        # Handles timeout errors
+        print(f"Timeout Error: {errrt}", file=sys.stderr)
+        return None
+    except requests.exceptions.RequestException as errex:
+        # Handles any other exception from the requests library (general exception)
+        print(f"An unexpected error occurred: {errex}", file=sys.stderr)
+        return None
 
 def get_forecast_start(now: datetime | None = None) -> tuple[str, int]:
     """
@@ -262,6 +278,7 @@ def atomic_write_lines(path: str, values: pd.Series) -> None:
 
 
 def main() -> int:
+    print(datetime.now().strftime("%Y%m%d%H%M") + " kindex_simple.py started")
     try:
         now = datetime.now(timezone.utc)
 
