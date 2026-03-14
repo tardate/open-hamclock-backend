@@ -2,10 +2,10 @@
 # kindex_simple.py
 #
 # Build HamClock geomag/kindex.txt (72 lines) from SWPC:
-# - daily-geomagnetic-indices.txt -> most recent 56 valid observed Planetary Kp bins
-# - 3-day-geomag-forecast.txt -> 16 forecast Kp bins using a dynamic window:
-#     start at the NEXT 3-hour bin after current UTC time, column-major,
-#     always producing exactly 16 forecast values.
+# - daily-geomagnetic-indices.txt -> most recent 55 valid observed Planetary Kp bins
+# - 3-day-geomag-forecast.txt -> 17 forecast Kp bins using a dynamic window:
+#    start at the NEXT 3-hour bin after current UTC time, column-major,
+#    always producing exactly 17 forecast values.
 #
 # Output path is atomically written:
 # /opt/hamclock-backend/htdocs/ham/HamClock/geomag/kindex.txt
@@ -83,24 +83,25 @@ def get_forecast_start(now: datetime | None = None) -> tuple[str, int]:
     hour = now.hour
 
     # Find the current 3-hour bin index (0-7)
+    # 00-03 is index 0, 03-06 is index 1, etc.
     current_bin_idx = max(i for i, b in enumerate(BIN_STARTS) if b <= hour)
 
-    # Next bin is the forecast start
-    next_bin_idx = (current_bin_idx + 1) % 8
+    # CHANGE: Start forecast at the CURRENT bin instead of current + 1
+    # This ensures no 3-hour gap exists between observed and forecast.
+    start_bin_idx = current_bin_idx
 
-    next_bin_start = BIN_STARTS[next_bin_idx]
-    next_bin_end = (next_bin_start + 3) % 24
+    start_bin_start = BIN_STARTS[start_bin_idx]
+    start_bin_end = (start_bin_start + 3) % 24
 
-    if next_bin_end == 0:
+    if start_bin_end == 0:
         row_label = "21-00UT"
     else:
-        row_label = f"{next_bin_start:02d}-{next_bin_end:02d}UT"
+        row_label = f"{start_bin_start:02d}-{start_bin_end:02d}UT"
 
-    # If next bin rolls over midnight (idx wraps to 0), we're on day2
-    col_idx = 1 if next_bin_idx == 0 else 0
+    # col_idx 0 is Day 1 of the forecast file (Today)
+    col_idx = 0
 
     return row_label, col_idx
-
 
 def parse_daily_kp_observed(text: str) -> pd.Series:
     """
@@ -132,13 +133,18 @@ def parse_daily_kp_observed(text: str) -> pd.Series:
         raise RuntimeError("No Kp rows parsed from daily-geomagnetic-indices.txt")
 
     s = pd.Series(vals, dtype="float64")
-    s = s[s >= 0].reset_index(drop=True)  # drop -1 placeholders
 
-    if len(s) < 56:
-        raise RuntimeError(f"Need at least 56 valid observed Kp bins, got {len(s)}")
+    # 1. Drop future placeholders (-1) so they don't pollute the tail(55)
+    s = s[s >= 0].reset_index(drop=True)
+
+    # 2. Grab the most recent 55 valid observations
+    s = s.tail(55).reset_index(drop=True)
+
+    # Need 55 for historical
+    if len(s) < 55:
+        raise RuntimeError(f"Need at least 55 valid observed Kp bins, got {len(s)}")
 
     return s
-
 
 def parse_kp_forecast_window(
     text: str,
@@ -152,7 +158,7 @@ def parse_kp_forecast_window(
     a pandas Series traversed in column-major order from (start_col_idx,
     start_row) to (end_col_idx, end_row), inclusive.
 
-    Always produces exactly 16 values by dynamically computing the end
+    Always produces exactly 17 values by dynamically computing the end
     position from the start position.
 
     Returns a Series of floats.
@@ -220,10 +226,10 @@ def parse_kp_forecast_window(
         dtype="float64",
     )
 
-    # Dynamically compute end position from start so we always get 16 values
+    # Dynamically compute end position from start so we always get 17 values
     total_bins = len(ROW_ORDER) * 3  # 24 total bins across 3 days
     start_flat = start_col_idx * len(ROW_ORDER) + ROW_ORDER.index(start_row)
-    end_flat = start_flat + 15  # 16 values inclusive = +15
+    end_flat = start_flat + 16  # 17 values inclusive = +16
 
     if end_flat >= total_bins:
         raise RuntimeError(
@@ -246,9 +252,9 @@ def parse_kp_forecast_window(
 
     fc = pd.Series(out_vals, dtype="float64").reset_index(drop=True)
 
-    if len(fc) != 16:
+    if len(fc) != 17:
         raise RuntimeError(
-            f"Expected 16 forecast Kp bins from dynamic window, got {len(fc)}"
+            f"Expected 17 forecast Kp bins from dynamic window, got {len(fc)}"
         )
 
     return fc
@@ -285,7 +291,8 @@ def main() -> int:
         daily_text = fetch_text(DAILY_URL)
         fcst_text = fetch_text(FCST_URL)
 
-        obs = parse_daily_kp_observed(daily_text).tail(56).reset_index(drop=True)
+        # Most recent 55 valid observed Planetary Kp bins
+        obs = parse_daily_kp_observed(daily_text).tail(55).reset_index(drop=True)
 
         # Dynamic forecast window based on current UTC time
         start_row, start_col = get_forecast_start(now)
