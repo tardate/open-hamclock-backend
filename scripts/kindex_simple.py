@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import time
 
 import requests
 
@@ -27,11 +28,21 @@ HEADERS = {"User-Agent": "OHB kindex_simple.py"}
 
 
 def fetch_kp() -> list[dict]:
-    r = requests.get(KP_URL, headers=HEADERS, timeout=TIMEOUT)
-    r.raise_for_status()
-    rows = r.json()
-    keys = rows[0]
-    return [dict(zip(keys, row)) for row in rows[1:]]
+    for attempt in range(3):
+        try:
+            r = requests.get(KP_URL, headers=HEADERS, timeout=TIMEOUT)
+            r.raise_for_status()
+            rows = r.json()
+            keys = rows[0]
+            return [dict(zip(keys, row)) for row in rows[1:]]
+        except Exception as e:
+            if attempt == 2:
+                raise
+            print(
+                f"WARNING: fetch attempt {attempt + 1}/3 failed: {e} -- retrying in 30s",
+                file=sys.stderr,
+            )
+            time.sleep(30)
 
 
 def build_output(records: list[dict]) -> list[float]:
