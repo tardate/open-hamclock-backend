@@ -43,10 +43,10 @@ LANG=C
 */30 * * * *   $VENV/bin/python3 $BASE/scripts/flux_simple.py           >> $BASE/logs/flux_simple.log 2>&1
 1-57/4 * * * *    $VENV/bin/python3 $BASE/scripts/xray_simple.py           >> $BASE/logs/xray_simple.log 2>&1
 
-# the json seems to update anywhere from a couple of mins to 10 mins after the hour. going with 15. Could
-# consider going hourly if 15 isn't good enough even on rare occasions.
-15 0,3,6,9,12,15,18,21 * * * $VENV/bin/python3 $BASE/scripts/kindex_simple.py >> $BASE/logs/kindex_simple.log 2>&1
-#5 * * * * $VENV/bin/python3 $BASE/scripts/kindex_simple.py >> $BASE/logs/kindex_simple.log 2>&1
+# the json seems to update anywhere from a couple of mins to 10 mins after the hour. going with 10. Since
+# the timeliness is important to some users, check again 15 mins later just to be sure.
+10 0,3,6,9,12,15,18,21 * * * $VENV/bin/python3 $BASE/scripts/kindex_simple.py >> $BASE/logs/kindex_simple.log 2>&1
+25 0,3,6,9,12,15,18,21 * * * $VENV/bin/python3 $BASE/scripts/kindex_simple.py >> $BASE/logs/kindex_simple.log 2>&1
 
 20,50 * * * *    $VENV/bin/python3 $BASE/scripts/dst_simple.py            >> $BASE/logs/dst_simple.log 2>&1
 25 8 * * *     $VENV/bin/python3 $BASE/scripts/gen_dxpeditions_spots.py >> $BASE/logs/dxpeds.log 2>&1
