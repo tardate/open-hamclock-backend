@@ -28,6 +28,18 @@ for u in "${URLS[@]}"; do
     echo >> "$TMPFILE"
 done
 
+CATNR_IDS=(
+    62394   # CROCUBE
+    62391   # LASARSAT
+    60237   # GRBBETA
+)
+
+for id in "${CATNR_IDS[@]}"; do
+    curl -fsSL "https://celestrak.org/NORAD/elements/gp.php?CATNR=${id}&FORMAT=tle" >> "$TMPFILE" || \
+        echo "Not found: NORAD $id" >&2
+    echo >> "$TMPFILE"
+done
+
 # Sanity check
 if ! grep -q '^1 ' "$TMPFILE"; then
     echo "ERROR: no TLE records"
