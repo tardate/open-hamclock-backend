@@ -17,11 +17,10 @@ Phases:
    - parse "Solar flux NNN"
    - repeat that value 3x
 
-3) Synthetic 3-day bridge (CSI-like tail):
-   - from WWV observed flux, generate [obs+2, obs+5, obs+8]
+3) 27-day outlook tail (3 days):
+   - parse 27-day-outlook.txt
+   - find the 3 forecast rows immediately following today's date
    - repeat each value 3x
-
-This intentionally ignores forecast parsing to match the CSI-style tail shape
 """
 
 from __future__ import annotations
@@ -29,15 +28,23 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from datetime import date, timedelta
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 from urllib.request import Request, urlopen
 
 
-DSD_URL = "https://services.swpc.noaa.gov/text/daily-solar-indices.txt"
-WWV_URL = "https://services.swpc.noaa.gov/text/wwv.txt"
+DSD_URL     = "https://services.swpc.noaa.gov/text/daily-solar-indices.txt"
+WWV_URL     = "https://services.swpc.noaa.gov/text/wwv.txt"
+OUTLOOK_URL = "https://services.swpc.noaa.gov/text/27-day-outlook.txt"
 
 UA = "open-hamclock-backend/1.0 (+solarflux-99 generator)"
+
+# Month abbreviations used in the 27-day outlook file
+_MONTHS = {
+    "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4,  "May": 5,  "Jun": 6,
+    "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
+}
 
 
 def fetch_text(url: str, timeout: int = 20) -> str:
@@ -69,7 +76,6 @@ def parse_dsd_fluxes(text: str) -> List[int]:
         if not m:
             continue
 
-        # groups: year, month, day, flux
         flux = int(m.group(4))
         fluxes.append(flux)
 
@@ -92,16 +98,55 @@ def parse_wwv_flux(text: str) -> int:
         raise ValueError("Could not parse WWV 'Solar flux NNN' line")
     return int(m.group(1))
 
-def build_phase3_bridge(obs_flux: int) -> List[int]:
-    """
-    CSI-like 3-day tail heuristic (current observed pattern):
-      [obs, obs+2, obs+5]
 
-    Example:
-      120 -> [120, 122, 125]
-      110 -> [110, 112, 115]
+def parse_outlook_fluxes(text: str, after_date: date, count: int = 3) -> List[int]:
     """
-    return [obs_flux, obs_flux + 2, obs_flux + 5]
+    Parse 27-day-outlook.txt and return `count` flux values for the days
+    immediately following `after_date`.
+
+    Row format:
+      2026 Mar 09     135          12          4
+    """
+    # Build a date->flux map from all rows
+    day_flux: dict[date, int] = {}
+
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith(":") or line.startswith("#"):
+            continue
+
+        m = re.match(
+            r"(\d{4})\s+([A-Za-z]{3})\s+(\d{2})\s+(\d+)", line
+        )
+        if not m:
+            continue
+
+        year  = int(m.group(1))
+        month = _MONTHS.get(m.group(2).capitalize())
+        day   = int(m.group(3))
+        flux  = int(m.group(4))
+
+        if month is None:
+            continue
+
+        try:
+            d = date(year, month, day)
+            day_flux[d] = flux
+        except ValueError:
+            continue
+
+    result: List[int] = []
+    for i in range(1, count + 1):
+        d = after_date + timedelta(days=i)
+        if d not in day_flux:
+            raise ValueError(
+                f"27-day outlook missing entry for {d} "
+                f"(needed {count} days after {after_date})"
+            )
+        result.append(day_flux[d])
+
+    return result
+
 
 def expand_tripled(values: List[int]) -> List[int]:
     out: List[int] = []
@@ -110,7 +155,16 @@ def expand_tripled(values: List[int]) -> List[int]:
     return out
 
 
-def generate_solarflux_99(dsd_text: str, wwv_text: str, debug: bool = False) -> List[int]:
+def generate_solarflux_99(
+    dsd_text: str,
+    wwv_text: str,
+    outlook_text: str,
+    today: date | None = None,
+    debug: bool = False,
+) -> List[int]:
+    if today is None:
+        today = date.today()
+
     # Phase 1: DSD rows (30 total, skip oldest => 29)
     dsd_fluxes_30 = parse_dsd_fluxes(dsd_text)
     phase1_daily = dsd_fluxes_30[1:]  # 29 values
@@ -118,8 +172,8 @@ def generate_solarflux_99(dsd_text: str, wwv_text: str, debug: bool = False) -> 
     # Phase 2: WWV observed flux (1 day)
     wwv_flux = parse_wwv_flux(wwv_text)
 
-    # Phase 3: CSI-like synthetic bridge (3 days)
-    phase3_daily = build_phase3_bridge(wwv_flux)
+    # Phase 3: next 3 days from 27-day outlook
+    phase3_daily = parse_outlook_fluxes(outlook_text, after_date=today, count=3)
 
     daily33 = phase1_daily + [wwv_flux] + phase3_daily
 
@@ -132,6 +186,7 @@ def generate_solarflux_99(dsd_text: str, wwv_text: str, debug: bool = False) -> 
         raise RuntimeError(f"Expected 99 values, got {len(out99)}")
 
     if debug:
+        print(f"DEBUG: today={today}", file=sys.stderr)
         print(f"DEBUG: phase1_daily (29): {phase1_daily}", file=sys.stderr)
         print(f"DEBUG: wwv_flux: {wwv_flux}", file=sys.stderr)
         print(f"DEBUG: phase3_daily (3): {phase3_daily}", file=sys.stderr)
@@ -157,12 +212,16 @@ def main() -> int:
     ap.add_argument("--debug", action="store_true", help="Verbose diagnostics to stderr")
 
     # Optional local overrides for offline testing
-    ap.add_argument("--dsd-file", help="Use local daily-solar-indices.txt instead of fetching SWPC")
-    ap.add_argument("--wwv-file", help="Use local wwv.txt instead of fetching SWPC")
+    ap.add_argument("--dsd-file",     help="Use local daily-solar-indices.txt instead of fetching SWPC")
+    ap.add_argument("--wwv-file",     help="Use local wwv.txt instead of fetching SWPC")
+    ap.add_argument("--outlook-file", help="Use local 27-day-outlook.txt instead of fetching SWPC")
+    ap.add_argument("--today",        help="Override today's date (YYYY-MM-DD) for testing")
 
     args = ap.parse_args()
 
     try:
+        today = date.fromisoformat(args.today) if args.today else date.today()
+
         if args.dsd_file:
             dsd_text = Path(args.dsd_file).read_text(encoding="utf-8", errors="replace")
         else:
@@ -173,7 +232,12 @@ def main() -> int:
         else:
             wwv_text = fetch_text(WWV_URL)
 
-        values = generate_solarflux_99(dsd_text, wwv_text, debug=args.debug)
+        if args.outlook_file:
+            outlook_text = Path(args.outlook_file).read_text(encoding="utf-8", errors="replace")
+        else:
+            outlook_text = fetch_text(OUTLOOK_URL)
+
+        values = generate_solarflux_99(dsd_text, wwv_text, outlook_text, today=today, debug=args.debug)
         write_lines(Path(args.out), values)
 
         if args.debug:
