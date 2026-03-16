@@ -56,16 +56,16 @@ main() {
         usage
     fi
 
-    while getopts ":p:cmh" opt; do
+    while getopts ":hmn" opt; do
         case $opt in
+            h)
+                usage
+                ;;
             m)
                 MULTI_PLATFORM=true
                 ;;
             n)
                 NOCACHE=true
-                ;;
-            h)
-                usage
                 ;;
             \?) # Handle invalid options
                 echo "Invalid option: -$OPTARG" >&2
