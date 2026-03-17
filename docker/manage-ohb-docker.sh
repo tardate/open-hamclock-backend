@@ -868,7 +868,7 @@ services:
         condition: service_healthy
 
   voacap-service:
-    image: komacke/voacap-service:1.4
+    image: komacke/voacap-service:1.5
     container_name: voacap-service
     restart: unless-stopped
     environment:
