@@ -11,17 +11,37 @@ my $q = CGI->new;
 
 # Get parameters from URL (e.g., fetchWSPR.pl?grid=FN30&maxage=900)
 # Syntax: $q->param('parameter_name') // default_value
-my $ofgrid = $q->param('ofgrid') // "EN41";
+my $ofgrid = $q->param('ofgrid') // "";
+my $bygrid = $q->param('bygrid') // "";
+my $ofcall = $q->param('ofcall') // "";
+my $bycall = $q->param('bycall') // "";
 my $maxage = $q->param('maxage') // 900;
 
 # Basic Sanitization (Very important for SQL safety)
 $ofgrid =~ s/[^a-zA-Z0-9]//g; # Remove anything not alphanumeric
+$bygrid =~ s/[^a-zA-Z0-9]//g; # Remove anything not alphanumeric
+$ofcall =~ s/[^a-zA-Z0-9]//g; # Remove anything not alphanumeric
+$bycall =~ s/[^a-zA-Z0-9]//g; # Remove anything not alphanumeric
 $maxage =~ s/[^0-9]//g;       # Ensure maxage is strictly a number
+
+my $where_clause = "";
+if ($ofgrid ne "") {
+    $where_clause = "tx_loc LIKE '$ofgrid%'";
+} elsif ($bygrid ne "") {
+    $where_clause = "rx_loc LIKE '$bygrid%'";
+} elsif ($ofcall ne "") {
+    $where_clause = "tx_sign == '$ofcall%'";
+} elsif ($bycall ne "") {
+    $where_clause = "rx_sign == '$bycall%'";
+} else {
+    print("ARGUMENT Error: no arguments set.\n");
+    exit
+}
 
 # --- SQL QUERY ---
 my $sql = "SELECT toUnixTimestamp(time) as epoch, tx_loc, tx_sign, rx_loc, rx_sign, frequency, snr " .
           "FROM wspr.rx " .
-          "WHERE tx_loc LIKE '$ofgrid%' " .
+          "WHERE $where_clause " .
           "AND time > subtractSeconds(now(), $maxage) " .
           "FORMAT JSON";
 
