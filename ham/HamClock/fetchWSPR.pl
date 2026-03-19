@@ -30,9 +30,9 @@ if ($ofgrid ne "") {
 } elsif ($bygrid ne "") {
     $where_clause = "rx_loc LIKE '$bygrid%'";
 } elsif ($ofcall ne "") {
-    $where_clause = "tx_sign == '$ofcall%'";
+    $where_clause = "tx_sign == '$ofcall'";
 } elsif ($bycall ne "") {
-    $where_clause = "rx_sign == '$bycall%'";
+    $where_clause = "rx_sign == '$bycall'";
 } else {
     print("ARGUMENT Error: no arguments set.\n");
     exit
