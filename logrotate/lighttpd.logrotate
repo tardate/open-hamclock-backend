@@ -3,8 +3,6 @@
     missingok
     # keep non-anonymized for 2 weeks
     rotate 15
-    compress
-    delaycompress
     notifempty
     copytruncate
     sharedscripts
@@ -17,7 +15,7 @@
  
         if [ -f "$TARGET" ]; then
             # Anonymize the file and give it a new name
-            anonip --input "$TARGET" -o "$TARGET.anon"
+            anonip --input "$TARGET" | gzip > "$TARGET.anon.gz"
         fi
     endscript
 }
