@@ -849,7 +849,7 @@ services:
 
   pskr:
     container_name: pskr-mqtt-cache
-    image: komacke/pskr-mqtt-cache:1.8
+    image: komacke/pskr-mqtt-cache:1.9
     restart: unless-stopped
     networks:
       - ohb
@@ -868,7 +868,7 @@ services:
         condition: service_healthy
 
   voacap-service:
-    image: komacke/voacap-service:1.7
+    image: komacke/voacap-service:1.8
     container_name: voacap-service
     restart: unless-stopped
     environment:

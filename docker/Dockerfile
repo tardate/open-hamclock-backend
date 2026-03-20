@@ -5,7 +5,7 @@
 #######################################################
 # build support artifacts
 #######################################################
-FROM debian:13.3-slim AS build-support
+FROM debian:13.4-slim AS build-support
 
 USER root
 WORKDIR /opt
@@ -28,7 +28,7 @@ RUN apt update && \
 #######################################################
 # Build the real image
 #######################################################
-FROM debian:13.3-slim
+FROM debian:13.4-slim
 
 USER root
 WORKDIR /opt
