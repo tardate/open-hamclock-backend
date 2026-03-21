@@ -43,6 +43,12 @@ my $POTA_CSV = '/opt/hamclock-backend/cache/all_parks_ext.csv';
 my $SOTA_CSV = '/opt/hamclock-backend/cache/sota_summits.csv';
 my $WWFF_CSV = '/opt/hamclock-backend/cache/wwff_parks.csv';
 
+my %csv_generators = (
+    $POTA_CSV => '/opt/hamclock-backend/scripts/update_pota_parks_cache.sh',
+    $SOTA_CSV => '/opt/hamclock-backend/scripts/update_sota_cache.pl',
+    $WWFF_CSV => '/opt/hamclock-backend/scripts/update_wwff_cache.pl',
+);
+
 # HamClock rejects callsigns longer than 12 characters
 my $MAX_CALL  = 12;
 # Parks'n'Peaks returns up to ~4 hours of history so match that window.
@@ -110,6 +116,20 @@ sub load_lookup {
     return %park;
 }
 
+foreach my $file (keys %csv_generators) {
+    unless (-e $file) {
+        my $script = $csv_generators{$file};
+        print "Missing $file. Running $script...\n";
+        
+        # Execute the specific script
+        system("perl $script");
+        
+        # Verify the script actually created the file
+        if ($? != 0 || !-e $file) {
+            print "Error: Failed to generate $file using $script (Exit code: $?). Continuing.\n";
+        }
+    }
+}
 my %pota_lookup = load_lookup($POTA_CSV);
 my %sota_lookup = load_lookup($SOTA_CSV);
 my %wwff_lookup = load_lookup($WWFF_CSV);
@@ -125,6 +145,7 @@ my $ua = LWP::UserAgent->new(
 
 my $now = time();
 my %best;   # dedup key -> row hashref
+my %counts = ( pota => 0, sota => 0, wwff => 0 );
 
 # ---------------------------------------------------------------------------
 # Helper: attempt to resolve location for a park/summit reference.
@@ -192,6 +213,7 @@ sub resolve_location {
                         park  => $park,
                         org   => $org,
                     };
+                    $counts{pota}++;
                 }
             }
         }
@@ -254,11 +276,12 @@ sub resolve_location {
                         park  => $park,
                         org   => 'SOTA',
                     };
+                    $counts{sota}++;
                 }
             }
         }
     } else {
-        warn "Parks'n'Peaks fetch failed: " . $resp->status_line . "\n";
+        warn "SOTA fetch failed: " . $resp->status_line . "\n";
     }
 }
 
@@ -338,6 +361,7 @@ sub resolve_location {
                     park  => $park,
                     org   => 'WWFF',
                 };
+                $counts{wwff}++;
             }
         }
         } # end JSON parse else
@@ -369,4 +393,11 @@ for my $r (@out) {
 }
 
 close $fh;
+
+print "--- Processing Complete ---\n";
+print "POTA records: $counts{pota}\n";
+print "SOTA records: $counts{sota}\n";
+print "WWFF records: $counts{wwff}\n";
+print "Total unique spots written to $TMP: " . scalar(@out) . "\n";
+
 move $TMP, $OUT or die "move failed $TMP -> $OUT: $!\n";
