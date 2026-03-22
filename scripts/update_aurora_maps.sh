@@ -58,31 +58,29 @@ with open("ovation.xyz","w") as f:
     for lon,lat,val in d["coordinates"]:
         if val <= 4:
             continue
+        if lat == 0.0:
+            continue
         if lon > 180.0:
             lon -= 360.0
         f.write(f"{lon:.6f} {lat:.6f} {val:.6f}\n")
-        if lon == -180.0 or lon == 180.0:
-            f.write(f"-180.000000 {lat:.6f} {val:.6f}\n")
-            f.write(f"180.000000 {lat:.6f} {val:.6f}\n")
 EOF
 
-echo "Gridding aurora once..."
-gmt nearneighbor "$XYZ" -R-180/180/-90/90 -I0.25 -S4 -Lx -Gaurora_raw.nc
+echo "Gridding aurora..."
+gmt nearneighbor "$XYZ" -R-180/180/-90/90 -I0.25 -S8 -Lx -Gaurora_raw.nc
 gmt grdfilter aurora_raw.nc -Fg6 -D0 -Gaurora.nc
-gmt grdclip aurora.nc -Sb3/NaN -Gaurora_clipped.nc
+gmt grdclip aurora.nc -Sb5/NaN -Gaurora_clipped.nc
 
 cat > aurora.cpt <<EOF
 # COLOR_MODEL = RGB
-0    32/52/32    10   24/124/24
-10   24/124/24   20   8/208/8
-20   8/208/8     30   48/252/0
-30   48/252/0    40   152/252/0
-40   152/252/0   50   248/252/0
-50   248/252/0   60   240/200/16
-60   240/200/16  70   232/136/32
-70   232/136/32  80   232/84/32
-80   232/84/32   90   240/40/16
-90   240/40/16  100   248/8/0
+5    8/208/8     10   48/252/0
+10   48/252/0    20   152/252/0
+20   152/252/0   30   248/252/0
+30   248/252/0   40   240/200/16
+40   240/200/16  50   232/136/32
+50   232/136/32  60   232/84/32
+60   232/84/32   70   240/40/16
+70   240/40/16   80   248/8/0
+80   248/8/0    100   248/8/0
 EOF
 
 make_bmp_v4_rgb565_topdown() {
@@ -211,7 +209,7 @@ for SZ in "${SIZES[@]}"; do
   im_convert "$PNG" -filter Lanczos -resize "${SZ}!" "$PNG_FIXED" || { echo "resize failed for $SZ"; continue; }
 
   RAW="$GMT_USERDIR/aurora_${DN}_${SZ}.raw"
-  im_convert "$PNG_FIXED" RGB:"$RAW" || { echo "raw extract failed for $SS"; continue; }
+  im_convert "$PNG_FIXED" RGB:"$RAW" || { echo "raw extract failed for $SZ"; continue; }
   make_bmp_v4_rgb565_topdown "$RAW" "$BMP" "$W" "$H" || { echo "bmp write failed for $SZ"; continue; }
   rm -f "$RAW" "$PNG" "$PNG_FIXED" "$PS"
 
