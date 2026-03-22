@@ -28,7 +28,7 @@ The main consideration is that you have a recent version and you have docker com
 
 At the time of this writing my docker and docker compose versions are:
 ```
-$ dockerd -v
+$ docker -v
 Docker version 29.2.0, build 1.fc43
 $ docker compose version
 Docker Compose version 5.0.2
