@@ -20,16 +20,16 @@ mkdir -p "$TMPDIR"
 # Sizes HamClock uses across builds
 SIZES=(170 340 510 680)
 
-BASE="https://sdo.gsfc.nasa.gov/assets/img/latest"
-
+BASE="https://suntoday.lmsal.com/sdomedia/SunInTime/mostrecent"
+ 
 SOURCES=(
-  "COMP|${BASE}/latest_1024_211193171.jpg|f_211_193_171_{S}.bmp"
-  "HMIB|${BASE}/latest_1024_HMIB.jpg|latest_{S}_HMIB.bmp"
-  "HMIIC|${BASE}/latest_1024_HMIIC.jpg|latest_{S}_HMIIC.bmp"
-  "A131|${BASE}/latest_1024_0131.jpg|f_131_{S}.bmp"
-  "A193|${BASE}/latest_1024_0193.jpg|f_193_{S}.bmp"
-  "A211|${BASE}/latest_1024_0211.jpg|f_211_{S}.bmp"
-  "A304|${BASE}/latest_1024_0304.jpg|f_304_{S}.bmp"
+  "COMP|${BASE}/l_211_193_171.jpg|f_211_193_171_{S}.bmp"
+  "HMIB|${BASE}/t_HMImag.jpg|latest_{S}_HMIB.bmp"
+  "HMIIC|${BASE}/t_HMI_cont_aiascale.jpg|latest_{S}_HMIIC.bmp"
+  "A131|${BASE}/t0131.jpg|f_131_{S}.bmp"
+  "A193|${BASE}/t0193.jpg|f_193_{S}.bmp"
+  "A211|${BASE}/t0211.jpg|f_211_{S}.bmp"
+  "A304|${BASE}/t0304.jpg|f_304_{S}.bmp"
 )
 
 zwrite() {
@@ -61,7 +61,7 @@ for entry in "${SOURCES[@]}"; do
   jpg="$TMPDIR/${key}.jpg"
 
   echo "Fetching $key ..."
-  curl -fsS -A "open-hamclock-backend/1.0" --retry 2 --retry-delay 2 "$url" -o "$jpg"
+  curl -kfsS -A "open-hamclock-backend/1.0" --retry 2 --retry-delay 2 "$url" -o "$jpg" || continue
 
   for S in "${SIZES[@]}"; do
     outbmp="${OUTDIR}/${tmpl/\{S\}/$S}"
