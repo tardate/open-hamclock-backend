@@ -58,7 +58,7 @@ RUN cd /opt/hamclock-backend && \
         data \
         htdocs && \
     mv  docker/run.sh /opt && \
-    echo $GIT_VERSION > /app/git.version && \
+    echo $GIT_VERSION > git.version && \
     # \
     # cron is tightly coupled to the type of python install. cron is written for pyenv. however \
     # when there is no pip or pyenv, python runs from /usr. \
