@@ -30,8 +30,6 @@ RUN apt update && \
 #######################################################
 FROM debian:13.4-slim
 
-ARG GIT_VERSION
-
 USER root
 WORKDIR /opt
 
@@ -42,6 +40,8 @@ RUN apt update && \
     apt install -y --no-install-recommends $(grep -v '^#' package-list.txt) && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /opt/package-list.txt
+
+ARG GIT_VERSION
 
 # the OHB tree
 COPY --exclude=docker/ohb-maps.tar.zst . /opt/hamclock-backend/
