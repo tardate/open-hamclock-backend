@@ -41,6 +41,8 @@ RUN apt update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /opt/package-list.txt
 
+ARG GIT_VERSION
+
 # the OHB tree
 COPY --exclude=docker/ohb-maps.tar.zst . /opt/hamclock-backend/
 COPY --from=build-support /opt/ohb-maps /opt/hamclock-backend/ham/HamClock/maps
@@ -56,6 +58,7 @@ RUN cd /opt/hamclock-backend && \
         data \
         htdocs && \
     mv  docker/run.sh /opt && \
+    echo $GIT_VERSION > git.version && \
     # \
     # cron is tightly coupled to the type of python install. cron is written for pyenv. however \
     # when there is no pip or pyenv, python runs from /usr. \
