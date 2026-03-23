@@ -15,7 +15,7 @@ chmod +x manage-ohb-docker.sh
 
 Run it. Substitute the version you want. This installs v0.16:
 ```
-.\manage-ohb-docker.sh install -t 0.16
+./manage-ohb-docker.sh install -t 0.16
 ```
 
 ### Full Docker Install Instructions
@@ -26,7 +26,7 @@ Full docker installation details:
 Clone and run the installer:
 
 ```bash
-git clone https://github.com/BrianWilkinsFL/open-hamclock-backend.git
+git clone https://github.com/komacke/open-hamclock-backend.git
 cd open-hamclock-backend
 sudo bash install_ohb.sh --size <desired size list>
 ```
