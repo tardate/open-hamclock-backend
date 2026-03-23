@@ -34,6 +34,5 @@ Bug reports and pull requests are welcome on GitHub at
 https://github.com/komacke/open-hamclock-backend/issues
 ## 📄 Disclaimer 👉 [Disclaimer](./DISCLAIMER.md)
 ## Related
-- [ohb-pskreporter-proxy](https://github.com/BrianWilkinsFL/ohb-pskreporter-proxy)
-- [hamclock-proxy-lite](https://github.com/BrianWilkinsFL/hamclock-proxy-lite)
 - [HamClockLauncher](https://github.com/huberthickman/HamClockLauncher)
+- [HamClock Web in Docker](https://github.com/komacke/hamclock)
