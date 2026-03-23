@@ -4,6 +4,9 @@
 OHB_MANAGER_VERSION=latest
 GITHUB_LATEST_RELEASE_URL="https://api.github.com/repos/komacke/open-hamclock-backend/releases/latest"
 
+VOACAP_SERVICE_TAG=latest
+PSKR_MQTT_CACHE_TAG=1.9
+
 OHB_HTDOCS_DVC=ohb-htdocs
 IMAGE_BASE=komacke/open-hamclock-backend
 
@@ -805,39 +808,29 @@ docker_compose_yml() {
     fi
 
     # compose file in $DOCKER_COMPOSE_YML
-    IFS= DOCKER_COMPOSE_YML=$(
-        docker_compose_yml_tmpl | 
-            sed "s/__DOCKER_PROJECT__/$DOCKER_PROJECT/" |
-            sed "s|__IMAGE__|$IMAGE|" |
-            sed "s/__CONTAINER__/$CONTAINER/" |
-            sed "s/__HTTP_PORT__/$HTTP_PORT/" |
-            sed "s/__HTTPS_PORT_MAPPING__/$HTTPS_PORT_MAPPING/" |
-            sed "s/__ENABLE_DASHBOARD__/$ENABLE_DASHBOARD/" |
-            sed "s|__EXTERNAL_HTTP_LOG_MAPPING__|$EXTERNAL_HTTP_LOG_MAPPING|" |
-            sed "s|__HTTPS_CERT_MAPPING__|$HTTPS_CERT_MAPPING|"
-    )
+    IFS= DOCKER_COMPOSE_YML=$( docker_compose_yml_tmpl )
 }
 
 docker_compose_yml_tmpl() {
     cat<<EOF
-name: __DOCKER_PROJECT__
+name: $DOCKER_PROJECT
 services:
   web:
-    container_name: __CONTAINER__
-    image: __IMAGE__
+    container_name: $CONTAINER
+    image: $IMAGE
     restart: unless-stopped
     environment:
-      ENABLE_DASHBOARD: __ENABLE_DASHBOARD__
+      ENABLE_DASHBOARD: $ENABLE_DASHBOARD
       PSKR_UID: 1001
     networks:
       - ohb
     ports:
-      - __HTTP_PORT__:80
-      __HTTPS_PORT_MAPPING__
+      - $HTTP_PORT:80
+      $HTTPS_PORT_MAPPING
     volumes:
       - ohb-htdocs:/opt/hamclock-backend/htdocs
-      __EXTERNAL_HTTP_LOG_MAPPING__
-      __HTTPS_CERT_MAPPING__
+      $EXTERNAL_HTTP_LOG_MAPPING
+      $HTTPS_CERT_MAPPING
     healthcheck:
       test: ["CMD", "curl", "-f", "-A", "healthcheck/1.0", "http://localhost:80/ham/HamClock/version.pl"]
       timeout: "5s"
@@ -849,7 +842,7 @@ services:
 
   pskr:
     container_name: pskr-mqtt-cache
-    image: komacke/pskr-mqtt-cache:1.9
+    image: komacke/pskr-mqtt-cache:$PSKR_MQTT_CACHE_TAG
     restart: unless-stopped
     networks:
       - ohb
@@ -868,7 +861,7 @@ services:
         condition: service_healthy
 
   voacap-service:
-    image: komacke/voacap-service:1.8
+    image: komacke/voacap-service:$VOACAP_SERVICE_TAG
     container_name: voacap-service
     restart: unless-stopped
     environment:

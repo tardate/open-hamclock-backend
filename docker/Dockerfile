@@ -30,6 +30,8 @@ RUN apt update && \
 #######################################################
 FROM debian:13.4-slim
 
+ARG GIT_VERSION
+
 USER root
 WORKDIR /opt
 
@@ -56,6 +58,7 @@ RUN cd /opt/hamclock-backend && \
         data \
         htdocs && \
     mv  docker/run.sh /opt && \
+    echo $GIT_VERSION > /app/git.version && \
     # \
     # cron is tightly coupled to the type of python install. cron is written for pyenv. however \
     # when there is no pip or pyenv, python runs from /usr. \
