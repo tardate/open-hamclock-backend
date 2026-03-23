@@ -1,65 +1,59 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Open HamClock Backend</title>
-
 <style>
-html,body{
-margin:0;
-height:100%;
-background:#05070c;
-color:#e6e6e6;
-font-family:system-ui,monospace;
+/* 1. Changed height from 100% to min-height so the page can grow */
+html, body {
+    margin: 0;
+    min-height: 100%; 
+    background: #05070c;
+    color: #e6e6e6;
+    font-family: system-ui, monospace;
 }
 
-.wrap{
-height:100%;
-display:flex;
-flex-direction:column;
-align-items:center;
-padding-top:20px;
+.wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
 }
 
-.title{
-letter-spacing:3px;
-font-size:20px;
-margin-bottom:8px;
-color:#d8e7ff;
+.title {
+    letter-spacing: 3px;
+    font-size: 20px;
+    margin-bottom: 8px;
+    color: #d8e7ff;
 }
 
-.panel{
-margin-top:10px;
-border:1px solid #2b4a7a;
-background:rgba(5,10,25,.85);
-padding:16px 22px;
-box-shadow:0 0 25px rgba(100,160,255,.15);
+.panel {
+    margin-top: 10px;
+    border: 1px solid #2b4a7a;
+    background: rgba(5, 10, 25, .85);
+    padding: 16px 22px;
+    box-shadow: 0 0 25px rgba(100, 160, 255, .15);
+    /* Ensure the panel expands with the iframe */
+    width: 760px; 
 }
 
-iframe{
-border:none;
-margin-top:8px;
-filter:brightness(1.2);
+/* 2. Set a specific pixel height for the iframe */
+iframe {
+    border: none;
+    width: 100%;
+    height: 1575px; /* Adjust this value until the scrollbar disappears */
+    filter: brightness(1.2);
+    display: block;
 }
-
 </style>
 </head>
-
 <body>
 
 <div class="wrap">
-
-<div class="title">OPEN HAMCLOCK BACKEND</div>
-
-<div class="panel">
-
-<div style='clear:both;'>
-<iframe src="/credits.html" width=760 height=800 style='clear:both;'></iframe>
-</div>
-
-</div>
-
-
+    <div class="title">OPEN HAMCLOCK BACKEND</div>
+    <div class="panel">
+        <iframe src="/credits.html"></iframe>
+    </div>
 </div>
 
 </body>
