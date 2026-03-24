@@ -2,11 +2,11 @@
 
 # at release time, this value is set to the tagged release
 OHB_MANAGER_VERSION=latest
-GITHUB_LATEST_RELEASE_URL="https://api.github.com/repos/komacke/open-hamclock-backend/releases/latest"
-
+# tags to use
 VOACAP_SERVICE_TAG=latest
 PSKR_MQTT_CACHE_TAG=1.9
 
+GITHUB_LATEST_RELEASE_URL="https://api.github.com/repos/komacke/open-hamclock-backend/releases/latest"
 OHB_HTDOCS_DVC=ohb-htdocs
 IMAGE_BASE=komacke/open-hamclock-backend
 
@@ -881,12 +881,12 @@ services:
         volume:
           subpath: ham/HamClock/ssn
         read_only: true
-    shm_size: "64mb"    # /dev/shm for fast VOACAP temp files
-    mem_limit: "512m"
-    cpus: "2.0"
+    shm_size: "128mb"    # /dev/shm for fast VOACAP temp files
+    mem_limit: "2048m"
+    cpus: "4.0"
     tmpfs:
-      - /run:size=8m
-      - /tmp:size=1024m
+      - /run:size=16m
+      - /tmp:size=2048m
     logging:
       options:
         max-size: "10m"
