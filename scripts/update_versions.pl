@@ -3,11 +3,12 @@ use strict;
 use warnings;
 use LWP::UserAgent;
 use JSON::PP;
+use Sort::Versions;
 
 # --- Configuration ---
 my $owner      = "komacke";
 my $repo       = "hamclock";
-my $cache_dir  = "/opt/hamclock-backend/cache/version_cache";
+my $cache_dir  = "/opt/hamclock-backend/cache";
 my $tags_url   = "https://api.github.com/repos/$owner/$repo/tags";
 
 mkdir $cache_dir unless -d $cache_dir;
@@ -19,11 +20,19 @@ $ua->agent("Version-Cache-Updater/1.0");
 my $tags_resp = $ua->get($tags_url);
 die "GitHub API Error: " . $tags_resp->status_line unless $tags_resp->is_success;
 
-my $tags = decode_json($tags_resp->decoded_content);
+my $tags_data = decode_json($tags_resp->decoded_content);
+
+my $tags = [];
+foreach my $t (@$tags_data) {
+    my $original = $t->{name};
+    my $clean = $original;
+    $clean =~ s/^[vV]//; # Strip v/V for sorting purposes
+    push @$tags, { clean => $clean, original => $original };
+}
 
 my ($stable_tag, $beta_tag);
 foreach my $tag (@$tags) {
-    my $name = $tag->{name};
+    my $name = $tag->{clean};
     $stable_tag = $name if (!$stable_tag && $name !~ /b/i);
     $beta_tag   = $name if (!$beta_tag   && $name =~ /b/i);
     last if $stable_tag && $beta_tag;

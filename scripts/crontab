@@ -37,6 +37,9 @@ PATH=/opt/hamclock-backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/us
 LC_ALL=C
 LANG=C
 
+# get the latest stable and beta versions
+57 * * * * /opt/hamclock-backend/scripts/update_versions.pl >> /opt/hamclock-backend/logs/update_versions.pl 2>&1
+
 44 * * * *     $VENV/bin/python3 $BASE/scripts/ssn_simple.py            >> $BASE/logs/ssn_simple.log 2>&1
 */5 * * * *    $VENV/bin/python3 $BASE/scripts/swind_simple.py          >> $BASE/logs/gen_swind_24hr.log 2>&1
 0-58/2 * * * *   $VENV/bin/python3 $BASE/scripts/bz_simple.py             >> $BASE/logs/bz_simple.log 2>&1
@@ -88,5 +91,3 @@ LANG=C
 
 # CSI period was 19 1-23/2 - Frequency increased to allow scripts to pull smaller chunks of data every 5 min to avoid rate limits
 */5 * * * * OPENMETEO_CHUNK=50 OPENMETEO_REQS_PER_RUN=1 /usr/bin/perl /opt/hamclock-backend/scripts/update_world_wx.pl >>/opt/hamclock-backend/logs/worldwx.log 2>&1
-
-57 * * * * /opt/hamclock-backend/scripts/update_versions.pl >> /opt/hamclock-backend/logs/update_versions.pl 2>&1

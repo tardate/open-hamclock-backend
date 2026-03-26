@@ -4,7 +4,7 @@ use warnings;
 use CGI;
 
 my $q = CGI->new;
-my $cache_dir = "/home/davek/tmp";
+my $cache_dir = "/opt/hamclock-backend/cache";
 
 print $q->header('text/plain');
 
