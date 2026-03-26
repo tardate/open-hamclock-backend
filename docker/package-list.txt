@@ -21,6 +21,7 @@ libdbi-perl
 libhtml-parser-perl
 libjson-perl
 librsvg2-bin
+libsort-versions-perl
 libtext-csv-xs-perl
 libwww-perl
 libxml-feed-perl
