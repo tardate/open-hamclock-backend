@@ -37,51 +37,85 @@
 #
 # ============================================================
 
-set -e
+set -euo pipefail
 
 export GMT_USERDIR=/opt/hamclock-backend/tmp
-cd $GMT_USERDIR
+mkdir -p "$GMT_USERDIR"
+cd "$GMT_USERDIR"
 
 source "/opt/hamclock-backend/scripts/lib_sizes.sh"
 ohb_load_sizes
 
 JSON=ovation.json
-XYZ=ovation.xyz
+XYZ_N=ovation_n.xyz
+XYZ_S=ovation_s.xyz
+
+# Hybrid interpolation:
+# - North uses nearneighbor to avoid synthetic circumpolar banding
+# - South uses surface to preserve Antarctic continuity
+# - Merge with grdblend
+AURORA_FEATHER_BLUR="0x3"
 
 echo "Fetching OVATION..."
-curl -fs https://services.swpc.noaa.gov/json/ovation_aurora_latest.json -o "$JSON"
+curl -fsS https://services.swpc.noaa.gov/json/ovation_aurora_latest.json -o "$JSON"
 
-python3 <<'EOF'
+python3 <<'EOF_PY'
 import json
-d=json.load(open("ovation.json"))
-with open("ovation.xyz","w") as f:
-    for lon,lat,val in d["coordinates"]:
-        if val <= 4:
+
+with open("ovation.json", "r", encoding="utf-8") as fh:
+    d = json.load(fh)
+
+with open("ovation_n.xyz", "w", encoding="utf-8") as fn, \
+     open("ovation_s.xyz", "w", encoding="utf-8") as fs:
+    for lon, lat, val in d["coordinates"]:
+        if val <= 1:
             continue
         if lat == 0.0:
             continue
+
         if lon > 180.0:
             lon -= 360.0
+
+        f = fn if lat > 0 else fs
         f.write(f"{lon:.6f} {lat:.6f} {val:.6f}\n")
-EOF
 
-echo "Gridding aurora..."
-gmt nearneighbor "$XYZ" -R-180/180/-90/90 -I0.25 -S8 -Lx -Gaurora_raw.nc
-gmt grdfilter aurora_raw.nc -Fg6 -D0 -Gaurora.nc
-gmt grdclip aurora.nc -Sb5/NaN -Gaurora_clipped.nc
+        # Only duplicate seam-near points across ±360.
+        if lon >= 170.0:
+            f.write(f"{lon - 360.0:.6f} {lat:.6f} {val:.6f}\n")
+        elif lon <= -170.0:
+            f.write(f"{lon + 360.0:.6f} {lat:.6f} {val:.6f}\n")
+EOF_PY
 
-cat > aurora.cpt <<EOF
+echo "Gridding aurora ..."
+
+# North: nearneighbor avoids broad synthetic banding
+gmt nearneighbor "$XYZ_N" -R-190/190/0/90 -I0.25 -S8 -Lx -Gaurora_n_raw.nc
+gmt grdfilter aurora_n_raw.nc -Fg3 -D0 -Gaurora_n_filt.nc
+gmt grdcut aurora_n_filt.nc -R-180/180/0/90 -Gaurora_n_crop.nc
+gmt grdclip aurora_n_crop.nc -Sb3/NaN -Gaurora_n_clip.nc
+
+# South: surface preserves valid Antarctic oval continuity
+gmt surface "$XYZ_S" -R-190/190/-90/0 -I0.25 -T0.85 -Gaurora_s_raw.nc
+gmt grdfilter aurora_s_raw.nc -Fg2 -D0 -Gaurora_s_filt.nc
+gmt grdcut aurora_s_filt.nc -R-180/180/-90/0 -Gaurora_s_crop.nc
+gmt grdclip aurora_s_crop.nc -Sb3/NaN -Gaurora_s_clip.nc
+
+# Merge north and south into one world grid.
+gmt grdblend aurora_n_clip.nc aurora_s_clip.nc -R-180/180/-90/90 -I0.25 -Gaurora_clipped.nc
+
+cat > aurora.cpt <<'EOF_CPT'
 # COLOR_MODEL = RGB
-5    8/208/8     10   48/252/0
-10   48/252/0    20   152/252/0
-20   152/252/0   30   248/252/0
-30   248/252/0   40   240/200/16
-40   240/200/16  50   232/136/32
-50   232/136/32  60   232/84/32
-60   232/84/32   70   240/40/16
-70   240/40/16   80   248/8/0
-80   248/8/0    100   248/8/0
-EOF
+3    0/56/0       5    0/80/0
+5    0/80/0      10    0/108/0
+10   0/108/0     20    0/168/0
+20   0/168/0     30    96/200/0
+30   96/200/0    40    192/216/0
+40   192/216/0   50    232/176/24
+50   232/176/24  60    232/120/32
+60   232/120/32  70    232/72/24
+70   232/72/24   80    240/24/8
+80   240/24/8   100    240/24/8
+EOF_CPT
 
 make_bmp_v4_rgb565_topdown() {
   local inraw="$1" outbmp="$2" W="$3" H="$4"
@@ -89,13 +123,15 @@ make_bmp_v4_rgb565_topdown() {
 import struct, sys
 inraw, outbmp, W, H = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
 raw = open(inraw, "rb").read()
-exp = W*H*3
+exp = W * H * 3
 if len(raw) != exp:
     raise SystemExit(f"RAW size {len(raw)} != expected {exp}")
-pix = bytearray(W*H*2)
+pix = bytearray(W * H * 2)
 j = 0
 for i in range(0, len(raw), 3):
-    r = raw[i]; g = raw[i+1]; b = raw[i+2]
+    r = raw[i]
+    g = raw[i + 1]
+    b = raw[i + 2]
     v = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
     pix[j:j+2] = struct.pack("<H", v)
     j += 2
@@ -105,35 +141,38 @@ filehdr = struct.pack("<2sIHHI", b"BM", bfSize, 0, 0, bfOffBits)
 biSize = 108
 rmask, gmask, bmask, amask = 0xF800, 0x07E0, 0x001F, 0x0000
 cstype = 0x73524742
-endpoints = b"\x00"*36
-gamma = b"\x00"*12
+endpoints = b"\x00" * 36
+gamma = b"\x00" * 12
 v4hdr = struct.pack("<IiiHHIIIIII",
     biSize, W, -H, 1, 16, 3, len(pix), 0, 0, 0, 0
 ) + struct.pack("<IIII", rmask, gmask, bmask, amask) \
   + struct.pack("<I", cstype) + endpoints + gamma
 with open(outbmp, "wb") as f:
-    f.write(filehdr); f.write(v4hdr); f.write(pix)
+    f.write(filehdr)
+    f.write(v4hdr)
+    f.write(pix)
 PY
 }
 
 zlib_compress() {
   local in="$1" out="$2"
-  python3 -c "
+  python3 - <<'PY' "$in" "$out"
 import zlib, sys
-data = open(sys.argv[1], 'rb').read()
-open(sys.argv[2], 'wb').write(zlib.compress(data, 9))
-" "$in" "$out"
+src, dst = sys.argv[1], sys.argv[2]
+with open(src, "rb") as f:
+    data = f.read()
+with open(dst, "wb") as f:
+    f.write(zlib.compress(data, 9))
+PY
 }
 
-# ---------------------------------------------------------------------------
-# ImageMagick 6: raised resource limits for very large maps
-# ---------------------------------------------------------------------------
 export MAGICK_LIMIT_WIDTH=65536
 export MAGICK_LIMIT_HEIGHT=65536
 export MAGICK_LIMIT_AREA=4096MB
 export MAGICK_LIMIT_MEMORY=2048MB
 export MAGICK_LIMIT_MAP=4096MB
 export MAGICK_LIMIT_DISK=8192MB
+
 im_convert() {
   convert \
     -limit width    65536  \
@@ -153,26 +192,37 @@ mkdir -p "$OUTDIR"
 for DN in D N; do
 for SZ in "${SIZES[@]}"; do
   BASE="$GMT_USERDIR/aurora_${DN}_${SZ}"
-  PNG="${BASE}.png"
+  BASE_PNG="${BASE}_base.png"
+  AURORA_PNG="${BASE}_aurora.png"
+  AURORA_RGB_PREMULT="${BASE}_aurora_rgb_premult.png"
+  BORDERS_PNG="${BASE}_borders.png"
+  AURORA_MASK="${BASE}_aurora_mask.png"
+  AURORA_MASK_BLUR="${BASE}_aurora_mask_blur.png"
+  AURORA_MASK_FINAL="${BASE}_aurora_mask_final.png"
+  COMPOSITE_PNG="${BASE}_composite.png"
   PNG_FIXED="${BASE}_fixed.png"
   BMP="$OUTDIR/map-${DN}-${SZ}-Aurora.bmp"
 
   W=${SZ%x*}
   H=${SZ#*x}
-  MAX_RENDER=7000
-  if (( W * 2 > MAX_RENDER )); then
-    RENDER_W=$W
-    RENDER_H=$H
-  else
+
+  MAX_RENDER=8000
+  if (( W * 4 > MAX_RENDER )); then
     RENDER_W=$((W * 2))
     RENDER_H=$((H * 2))
+  else
+    RENDER_W=$((W * 4))
+    RENDER_H=$((H * 4))
   fi
 
   echo "  -> ${DN} ${SZ}"
 
-  PS="${BASE}.ps"
-  W_cm=$(awk "BEGIN{printf \"%.4f\", $RENDER_W * 2.54 / 72}")
-  H_cm=$(awk "BEGIN{printf \"%.4f\", $RENDER_H * 2.54 / 72}")
+  BASE_PS="${BASE}_base.ps"
+  AURORA_PS="${BASE}_aurora.ps"
+  BORDERS_PS="${BASE}_borders.ps"
+
+  W_cm=$(awk "BEGIN{printf \"%.4f\", ($RENDER_W * 2.54 / 72) + 0.05}")
+  H_cm=$(awk "BEGIN{printf \"%.4f\", ($RENDER_H * 2.54 / 72) + 0.05}")
   GMT_CONF="$GMT_USERDIR/gmtconf_aurora_${DN}_${SZ}"
   mkdir -p "$GMT_CONF"
   GMT_USERDIR="$GMT_CONF" gmt set \
@@ -182,36 +232,111 @@ for SZ in "${SIZES[@]}"; do
 
   (
     cd "$GMT_USERDIR" || exit 1
+
     if [[ "$DN" == "D" ]]; then
       FILL="74/73/74"
     else
       FILL="0/0/0"
     fi
-    GMT_USERDIR="$GMT_CONF" \
-    gmt pscoast -R-180/180/-90/90 -JQ0/${RENDER_W}p -G${FILL} -S${FILL} -A10000 \
-      --MAP_FRAME_AXES= -P -K > "$PS"
-    GMT_USERDIR="$GMT_CONF" \
-    gmt grdimage aurora_clipped.nc -R-180/180/-90/90 -JQ0/${RENDER_W}p \
-      -Caurora.cpt -Q -n+b --MAP_FRAME_AXES= -O -K >> "$PS"
+
     GMT_USERDIR="$GMT_CONF" \
     gmt pscoast -R-180/180/-90/90 -JQ0/${RENDER_W}p \
-      -W1.25p,white -N1/1.10p,white -A10000 --MAP_FRAME_AXES= -O -K >> "$PS"
-    gmt psxy -R -J -T -O >> "$PS"
+      -G${FILL} -S${FILL} -A10000 \
+      --MAP_FRAME_AXES= -P > "$BASE_PS"
+
     gs -dBATCH -dNOPAUSE -dSAFER -dQUIET \
        -sDEVICE=png16m \
        -r72 \
        -dDEVICEWIDTHPOINTS=${RENDER_W} \
        -dDEVICEHEIGHTPOINTS=${RENDER_H} \
-       -sOutputFile="$PNG" \
-       "$PS"
-  ) || { echo "gmt/gs failed for ${DN} $SZ" >&2; continue; }
+       -sOutputFile="$BASE_PNG" \
+       "$BASE_PS"
 
-  im_convert "$PNG" -filter Lanczos -resize "${SZ}!" "$PNG_FIXED" || { echo "resize failed for $SZ"; continue; }
+    GMT_USERDIR="$GMT_CONF" \
+    gmt grdimage aurora_clipped.nc -R-180/180/-90/90 -JQ0/${RENDER_W}p \
+      -Caurora.cpt -Q -n+b --MAP_FRAME_AXES= -P > "$AURORA_PS"
+
+    gs -dBATCH -dNOPAUSE -dSAFER -dQUIET \
+       -sDEVICE=pngalpha \
+       -r72 \
+       -dDEVICEWIDTHPOINTS=${RENDER_W} \
+       -dDEVICEHEIGHTPOINTS=${RENDER_H} \
+       -sOutputFile="$AURORA_PNG" \
+       "$AURORA_PS"
+
+    im_convert "$AURORA_PNG" -alpha on -transparent black "$AURORA_PNG"
+
+    GMT_USERDIR="$GMT_CONF" \
+    gmt pscoast -R-180/180/-90/90 -JQ0/${RENDER_W}p \
+      -W1.25p,white -N1/1.10p,white -A10000 \
+      --MAP_FRAME_AXES= -P > "$BORDERS_PS"
+
+    gs -dBATCH -dNOPAUSE -dSAFER -dQUIET \
+       -sDEVICE=pngalpha \
+       -r72 \
+       -dDEVICEWIDTHPOINTS=${RENDER_W} \
+       -dDEVICEHEIGHTPOINTS=${RENDER_H} \
+       -sOutputFile="$BORDERS_PNG" \
+       "$BORDERS_PS"
+
+    im_convert "$BORDERS_PNG" -strip -alpha on -transparent black "$BORDERS_PNG"
+
+    im_convert "$AURORA_PNG" \
+      -alpha extract \
+      -strip \
+      "$AURORA_MASK"
+
+    im_convert "$AURORA_MASK" \
+      -filter Gaussian \
+      -resize 200% \
+      -resize 50% \
+      -blur "$AURORA_FEATHER_BLUR" \
+      -strip \
+      "$AURORA_MASK_BLUR"
+
+    im_convert "$AURORA_MASK" "$AURORA_MASK_BLUR" \
+      -compose Lighten -composite \
+      -strip \
+      "$AURORA_MASK_FINAL"
+
+    im_convert -size ${RENDER_W}x${RENDER_H} xc:black "$AURORA_PNG" \
+      -compose Over -composite \
+      "$AURORA_RGB_PREMULT"
+
+    im_convert "$AURORA_RGB_PREMULT" "$AURORA_MASK_FINAL" \
+      -compose CopyOpacity -composite \
+      -strip \
+      "$AURORA_PNG"
+
+    im_convert "$BASE_PNG" "$AURORA_PNG" \
+      -compose Over -composite \
+      miff:- | \
+    im_convert - "$BORDERS_PNG" \
+      -compose Over -composite \
+      "$COMPOSITE_PNG"
+  ) || { echo "gmt/gs/im failed for ${DN} $SZ" >&2; continue; }
+
+  im_convert "$COMPOSITE_PNG" -filter Lanczos -resize "${SZ}!" "$PNG_FIXED" || {
+    echo "resize failed for $SZ" >&2
+    continue
+  }
 
   RAW="$GMT_USERDIR/aurora_${DN}_${SZ}.raw"
-  im_convert "$PNG_FIXED" RGB:"$RAW" || { echo "raw extract failed for $SZ"; continue; }
-  make_bmp_v4_rgb565_topdown "$RAW" "$BMP" "$W" "$H" || { echo "bmp write failed for $SZ"; continue; }
-  rm -f "$RAW" "$PNG" "$PNG_FIXED" "$PS"
+  im_convert "$PNG_FIXED" RGB:"$RAW" || {
+    echo "raw extract failed for $SZ" >&2
+    continue
+  }
+
+  make_bmp_v4_rgb565_topdown "$RAW" "$BMP" "$W" "$H" || {
+    echo "bmp write failed for $SZ" >&2
+    continue
+  }
+
+  rm -f "$RAW" "$PNG_FIXED" \
+        "$BASE_PS" "$AURORA_PS" "$BORDERS_PS" \
+        "$BASE_PNG" "$AURORA_PNG" "$AURORA_RGB_PREMULT" "$BORDERS_PNG" \
+        "$AURORA_MASK" "$AURORA_MASK_BLUR" "$AURORA_MASK_FINAL" \
+        "$COMPOSITE_PNG"
 
   zlib_compress "$BMP" "${BMP}.z"
   chmod 0644 "$BMP" "${BMP}.z" 2>/dev/null || true
@@ -220,6 +345,17 @@ for SZ in "${SIZES[@]}"; do
 done
 done
 
-rm -f aurora_raw.nc aurora.nc aurora_clipped.nc aurora.cpt ovation.xyz
+echo "Intermediates preserved:"
+echo "  $GMT_USERDIR/ovation_n.xyz"
+echo "  $GMT_USERDIR/ovation_s.xyz"
+echo "  $GMT_USERDIR/aurora_n_raw.nc"
+echo "  $GMT_USERDIR/aurora_n_filt.nc"
+echo "  $GMT_USERDIR/aurora_n_crop.nc"
+echo "  $GMT_USERDIR/aurora_n_clip.nc"
+echo "  $GMT_USERDIR/aurora_s_raw.nc"
+echo "  $GMT_USERDIR/aurora_s_filt.nc"
+echo "  $GMT_USERDIR/aurora_s_crop.nc"
+echo "  $GMT_USERDIR/aurora_s_clip.nc"
+echo "  $GMT_USERDIR/aurora_clipped.nc"
 
 echo "Done."
