@@ -36,7 +36,6 @@
 #  OTHER DEALINGS IN THE SOFTWARE.
 #
 # ============================================================
-
 set -e
 
 export GMT_USERDIR=/opt/hamclock-backend/tmp
@@ -53,35 +52,78 @@ curl -fs https://services.swpc.noaa.gov/json/ovation_aurora_latest.json -o "$JSO
 
 python3 <<'EOF'
 import json
-d=json.load(open("ovation.json"))
-with open("ovation.xyz","w") as f:
-    for lon,lat,val in d["coordinates"]:
+d = json.load(open("ovation.json"))
+with open("ovation.xyz", "w") as f:
+    for lon, lat, val in d["coordinates"]:
         if val <= 4:
-            continue
-        if lat == 0.0:
             continue
         if lon > 180.0:
             lon -= 360.0
         f.write(f"{lon:.6f} {lat:.6f} {val:.6f}\n")
+        if lon == -180.0 or lon == 180.0:
+            f.write(f"-180.000000 {lat:.6f} {val:.6f}\n")
+            f.write(f"180.000000 {lat:.6f} {val:.6f}\n")
 EOF
 
 echo "Gridding aurora..."
-gmt nearneighbor "$XYZ" -R-180/180/-90/90 -I0.25 -S8 -Lx -Gaurora_raw.nc
-gmt grdfilter aurora_raw.nc -Fg6 -D0 -Gaurora.nc
+gmt nearneighbor "$XYZ" -R-180/180/-90/90 -I0.25 -S4 -Lx -Gaurora_raw.nc
+# Wide Gaussian (Fg8) matches the smooth falloff profile measured in CSI output.
+gmt grdfilter aurora_raw.nc -Fg4 -D0 -Gaurora.nc
 gmt grdclip aurora.nc -Sb5/NaN -Gaurora_clipped.nc
 
-cat > aurora.cpt <<EOF
-# COLOR_MODEL = RGB
-5    8/208/8     10   48/252/0
-10   48/252/0    20   152/252/0
-20   152/252/0   30   248/252/0
-30   248/252/0   40   240/200/16
-40   240/200/16  50   232/136/32
-50   232/136/32  60   232/84/32
-60   232/84/32   70   240/40/16
-70   240/40/16   80   248/8/0
-80   248/8/0    100   248/8/0
-EOF
+# ---------------------------------------------------------------------------
+# Aurora opacity tuning:
+#   MAX_ALPHA  — opacity at full intensity (0.44 = CSI level, 0.30 = subtle)
+#   NORM_MAX   — OVATION value that reaches MAX_ALPHA; values above clamp
+#                  Lower = dim aurora more visible; higher = only storms pop
+#   GAMMA      — curve shape across 5..NORM_MAX:
+#                  1.0 = linear
+#                  >1.0 = dim aurora fades faster, bright stands out more
+#                  <1.0 = dim aurora more visible relative to bright
+# Defaults: NORM_MAX=40 means typical active aurora (val≈30) is ~27% opacity
+#           and storm aurora (val≥40) hits MAX_ALPHA
+# ---------------------------------------------------------------------------
+MAX_ALPHA=0.44
+NORM_MAX=15
+GAMMA=0.7
+
+export MAX_ALPHA NORM_MAX GAMMA
+python3 <<'PYEOF'
+import os
+MAX_ALPHA = float(os.environ['MAX_ALPHA'])
+NORM_MAX  = float(os.environ['NORM_MAX'])
+GAMMA     = float(os.environ['GAMMA'])
+pts = [
+    (  5,   8, 208,   8),
+    ( 10,  48, 252,   0),
+    ( 20, 152, 252,   0),
+    ( 30, 248, 252,   0),
+    ( 40, 240, 200,  16),
+    ( 50, 232, 136,  32),
+    ( 60, 232,  84,  32),
+    ( 70, 240,  40,  16),
+    ( 80, 248,   8,   0),
+    (100, 248,   8,   0),
+]
+def alpha_for(v):
+    t = max(0.0, min(1.0, (v - 5) / (NORM_MAX - 5)))
+    return (t ** GAMMA) * MAX_ALPHA
+def blend(ar, ag, ab, br, bg, bb, a):
+    r = int(round(ar*a + br*(1-a)))
+    g = int(round(ag*a + bg*(1-a)))
+    b = int(round(ab*a + bb*(1-a)))
+    return (min(r,255), min(g,255), min(b,255))
+for fname, bgc in [('aurora_D.cpt',(74,73,74)),('aurora_N.cpt',(0,0,0))]:
+    with open(fname,'w') as f:
+        f.write('# COLOR_MODEL = RGB\n')
+        for i in range(len(pts)-1):
+            v0,r0,g0,b0=pts[i]; v1,r1,g1,b1=pts[i+1]
+            a0=alpha_for(v0); a1=alpha_for(v1)
+            c0=blend(r0,g0,b0,*bgc,a0); c1=blend(r1,g1,b1,*bgc,a1)
+            f.write(f'{v0:3d}  {c0[0]}/{c0[1]}/{c0[2]}   {v1:3d}  {c1[0]}/{c1[1]}/{c1[2]}\n')
+        f.write('N    0/0/0\n')
+PYEOF
+
 
 make_bmp_v4_rgb565_topdown() {
   local inraw="$1" outbmp="$2" W="$3" H="$4"
@@ -125,9 +167,6 @@ open(sys.argv[2], 'wb').write(zlib.compress(data, 9))
 " "$in" "$out"
 }
 
-# ---------------------------------------------------------------------------
-# ImageMagick 6: raised resource limits for very large maps
-# ---------------------------------------------------------------------------
 export MAGICK_LIMIT_WIDTH=65536
 export MAGICK_LIMIT_HEIGHT=65536
 export MAGICK_LIMIT_AREA=4096MB
@@ -136,12 +175,9 @@ export MAGICK_LIMIT_MAP=4096MB
 export MAGICK_LIMIT_DISK=8192MB
 im_convert() {
   convert \
-    -limit width    65536  \
-    -limit height   65536  \
-    -limit area     4096MB \
-    -limit memory   2048MB \
-    -limit map      4096MB \
-    -limit disk     8192MB \
+    -limit width  65536 -limit height 65536 \
+    -limit area   4096MB -limit memory 2048MB \
+    -limit map    4096MB -limit disk   8192MB \
     "$@"
 }
 
@@ -161,14 +197,18 @@ for SZ in "${SIZES[@]}"; do
   H=${SZ#*x}
   MAX_RENDER=7000
   if (( W * 2 > MAX_RENDER )); then
-    RENDER_W=$W
-    RENDER_H=$H
+    RENDER_W=$W; RENDER_H=$H
   else
-    RENDER_W=$((W * 2))
-    RENDER_H=$((H * 2))
+    RENDER_W=$((W * 2)); RENDER_H=$((H * 2))
   fi
 
   echo "  -> ${DN} ${SZ}"
+
+  if [[ "$DN" == "D" ]]; then
+    FILL="74/73/74"
+  else
+    FILL="0/0/0"
+  fi
 
   PS="${BASE}.ps"
   W_cm=$(awk "BEGIN{printf \"%.4f\", $RENDER_W * 2.54 / 72}")
@@ -182,35 +222,29 @@ for SZ in "${SIZES[@]}"; do
 
   (
     cd "$GMT_USERDIR" || exit 1
-    if [[ "$DN" == "D" ]]; then
-      FILL="74/73/74"
-    else
-      FILL="0/0/0"
-    fi
     GMT_USERDIR="$GMT_CONF" \
-    gmt pscoast -R-180/180/-90/90 -JQ0/${RENDER_W}p -G${FILL} -S${FILL} -A10000 \
-      --MAP_FRAME_AXES= -P -K > "$PS"
+    gmt pscoast -R-180/180/-90/90 -JQ0/${RENDER_W}p \
+      -G${FILL} -S${FILL} -A10000 --MAP_FRAME_AXES= -P -K > "$PS"
     GMT_USERDIR="$GMT_CONF" \
     gmt grdimage aurora_clipped.nc -R-180/180/-90/90 -JQ0/${RENDER_W}p \
-      -Caurora.cpt -Q -n+b --MAP_FRAME_AXES= -O -K >> "$PS"
+      -Caurora_${DN}.cpt -Q -n+b --MAP_FRAME_AXES= -O -K >> "$PS"
     GMT_USERDIR="$GMT_CONF" \
     gmt pscoast -R-180/180/-90/90 -JQ0/${RENDER_W}p \
       -W1.25p,white -N1/1.10p,white -A10000 --MAP_FRAME_AXES= -O -K >> "$PS"
     gmt psxy -R -J -T -O >> "$PS"
     gs -dBATCH -dNOPAUSE -dSAFER -dQUIET \
-       -sDEVICE=png16m \
-       -r72 \
-       -dDEVICEWIDTHPOINTS=${RENDER_W} \
-       -dDEVICEHEIGHTPOINTS=${RENDER_H} \
-       -sOutputFile="$PNG" \
-       "$PS"
+       -sDEVICE=png16m -r72 \
+       -dDEVICEWIDTHPOINTS=${RENDER_W} -dDEVICEHEIGHTPOINTS=${RENDER_H} \
+       -sOutputFile="$PNG" "$PS"
   ) || { echo "gmt/gs failed for ${DN} $SZ" >&2; continue; }
 
-  im_convert "$PNG" -filter Lanczos -resize "${SZ}!" "$PNG_FIXED" || { echo "resize failed for $SZ"; continue; }
+  im_convert "$PNG" -filter Lanczos -resize "${SZ}!" "$PNG_FIXED" \
+    || { echo "resize failed for $SZ"; continue; }
 
   RAW="$GMT_USERDIR/aurora_${DN}_${SZ}.raw"
   im_convert "$PNG_FIXED" RGB:"$RAW" || { echo "raw extract failed for $SZ"; continue; }
-  make_bmp_v4_rgb565_topdown "$RAW" "$BMP" "$W" "$H" || { echo "bmp write failed for $SZ"; continue; }
+  make_bmp_v4_rgb565_topdown "$RAW" "$BMP" "$W" "$H" \
+    || { echo "bmp write failed for $SZ"; continue; }
   rm -f "$RAW" "$PNG" "$PNG_FIXED" "$PS"
 
   zlib_compress "$BMP" "${BMP}.z"
@@ -220,6 +254,6 @@ for SZ in "${SIZES[@]}"; do
 done
 done
 
-rm -f aurora_raw.nc aurora.nc aurora_clipped.nc aurora.cpt ovation.xyz
+rm -f aurora_raw.nc aurora.nc aurora_clipped.nc aurora_D.cpt aurora_N.cpt ovation.xyz
 
 echo "Done."
