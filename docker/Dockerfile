@@ -44,10 +44,9 @@ RUN apt update && \
 ARG GIT_VERSION
 
 # the OHB tree
-COPY --exclude=docker/ohb-maps.tar.zst . /opt/hamclock-backend/
 COPY --from=build-support /opt/ohb-maps /opt/hamclock-backend/ham/HamClock/maps
 
-# Install hamclock-backend
+# some setup
 RUN cd /opt/hamclock-backend && \
     # \
     # make directory structure \
@@ -57,8 +56,17 @@ RUN cd /opt/hamclock-backend && \
         cache \
         data \
         htdocs && \
-    mv  docker/run.sh /opt && \
+    # \
     echo $GIT_VERSION > git.version && \
+    # \
+    openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
+        -keyout /etc/lighttpd/server.pem -out /etc/lighttpd/server.pem \
+        -subj "/C=US/ST=State/L=City/O=Organization/OU=IT/CN=localhost"
+
+# Install hamclock-backend
+COPY --exclude=docker/ohb-maps.tar.zst . /opt/hamclock-backend/
+RUN cd /opt/hamclock-backend && \
+    mv  docker/run.sh /opt && \
     # \
     # cron is tightly coupled to the type of python install. cron is written for pyenv. however \
     # when there is no pip or pyenv, python runs from /usr. \
@@ -93,10 +101,8 @@ RUN cd /opt/hamclock-backend && \
     /usr/sbin/lighty-enable-mod accesslog && \
     /usr/sbin/lighttpd-enable-mod hamclock && \
     /usr/sbin/lighttpd-enable-mod ohb-dashboard && \
+    /usr/sbin/lighttpd-enable-mod hc-firmware && \
     /usr/sbin/lighttpd-enable-mod ssl && \
-    openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
-        -keyout /etc/lighttpd/server.pem -out /etc/lighttpd/server.pem \
-        -subj "/C=US/ST=State/L=City/O=Organization/OU=IT/CN=localhost" && \
     # \
     # ImageMagick policy parameters need to be increased \
     sed -i 's/name="memory" value="[^"]*"/name="memory" value="2GiB"/' /etc/ImageMagick-?/policy.xml && \
