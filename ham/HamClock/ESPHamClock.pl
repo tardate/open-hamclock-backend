@@ -5,7 +5,6 @@ use CGI;
 
 # --- Configuration ---
 my $cache_dir    = "/opt/hamclock-backend/cache";
-my $storage_dir    = "/opt/hamclock-backend/htdocs/ham/HamClock";
 
 my $q = CGI->new;
 # $q->keywords captures the $1 from the lighttpd rewrite (e.g., ESPHamClock.zip)
@@ -47,7 +46,7 @@ elsif ($query_file eq "ESPHamClock.zip") {
 }
 
 # 2. Check for file existence and serve
-my $full_path = "$storage_dir/$target_zip";
+my $full_path = "$cache_dir/$target_zip";
 
 if ($target_zip ne "" && -f $full_path) {
     my $filesize = -s $full_path;
