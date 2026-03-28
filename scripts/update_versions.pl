@@ -13,7 +13,7 @@ my $tags_url   = "https://api.github.com/repos/$owner/$repo/tags";
 
 mkdir $cache_dir unless -d $cache_dir;
 
-# Increased timeout for zip downloads
+# Increased timeout to 60s for binary downloads
 my $ua = LWP::UserAgent->new(timeout => 60);
 $ua->agent("Version-Cache-Updater/1.0");
 
@@ -65,46 +65,47 @@ foreach my $item (
     $display_version =~ s/^(\d+\.\d+)\.\d+/$1/;
 
     # --- Change Detection Logic ---
-    # Only skip this specific type (stable or beta) if the version matches
     if (-f $txt_file) {
         if (open(my $cfh, '<', $txt_file)) {
             my $existing_version = <$cfh>;
             close($cfh);
             if ($existing_version) {
                 chomp($existing_version);
-                $existing_version =~ s/\R//g; # Remove any hidden line endings
+                $existing_version =~ s/\R//g;
                 if ($existing_version eq $display_version) {
                     print "Skipping $item->{type}: Version $display_version is already up to date.\n";
-                    next; # Moves from current type to the next type in the loop
+                    next;
                 }
             }
         }
     }
 
-    # --- If we are here, a change was detected for this specific type ---
+    # --- If we are here, an update is needed ---
 
-    # 1. Write the .tag file
-    open(my $tfh, '>', $tag_file) or die "Could not write $tag_file: $!";
-    print $tfh $orig_ver . "\n";
-    close($tfh);
-    chmod 0644, $tag_file;
-
-    # 2. Download Zip File
+    # 1. Download the Release Asset ZIP
     my $zip_filename = "ESPHamClock-V$display_version.zip";
     my $zip_path     = "$cache_dir/$zip_filename";
-    my $zip_url      = "https://github.com/$owner/$repo/archive/refs/tags/$orig_ver.zip";
+    my $zip_url      = "https://github.com/$owner/$repo/releases/download/$orig_ver/$zip_filename";
 
-    print "Update found! Downloading $item->{type} zip from $zip_url...\n";
+    print "Update found! Downloading $item->{type} asset from $zip_url...\n";
     my $zip_resp = $ua->get($zip_url, ':content_file' => $zip_path);
 
     if ($zip_resp->is_success) {
         chmod 0644, $zip_path;
         print "Successfully saved $zip_path\n";
     } else {
-        print "Error downloading zip: " . $zip_resp->status_line . "\n";
+        print "Error: Failed to download $zip_filename. Release asset might be missing from tag $orig_ver.\n";
+        print "Status: " . $zip_resp->status_line . "\n";
+        # Optionally 'next' here if you don't want to update .txt if zip fails
     }
 
-    # 3. Fetch HC_RELEASE.txt content for this tag
+    # 2. Write the .tag file
+    open(my $tfh, '>', $tag_file) or die "Could not write $tag_file: $!";
+    print $tfh $orig_ver . "\n";
+    close($tfh);
+    chmod 0644, $tag_file;
+
+    # 3. Fetch HC_RELEASE.txt content and write .txt file
     my $raw_url = "https://raw.githubusercontent.com/$owner/$repo/$orig_ver/HC_RELEASE.txt";
     my $resp = $ua->get($raw_url);
 
