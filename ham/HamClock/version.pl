@@ -6,6 +6,7 @@ use CGI;
 my $q = CGI->new;
 my $cache_dir = "/opt/hamclock-backend/cache";
 
+print "Remote_Addr: $ENV{REMOTE_ADDR}\n";
 print $q->header('text/plain');
 
 # 1. Parse User-Agent (e.g., HamClock/4.22b01)
