@@ -55,7 +55,11 @@ import json
 d = json.load(open("ovation.json"))
 with open("ovation.xyz", "w") as f:
     for lon, lat, val in d["coordinates"]:
-        if val <= 4:
+        if val <= 0:
+            continue
+        # OVATION has spurious low values at equatorial/tropical latitudes.
+        # Exclude the tropics entirely — aurora never occurs there.
+        if -40.0 < lat < 40.0:
             continue
         if lon > 180.0:
             lon -= 360.0
@@ -66,64 +70,75 @@ with open("ovation.xyz", "w") as f:
 EOF
 
 echo "Gridding aurora..."
-gmt nearneighbor "$XYZ" -R-180/180/-90/90 -I0.25 -S4 -Lx -Gaurora_raw.nc
-# Wide Gaussian (Fg8) matches the smooth falloff profile measured in CSI output.
-gmt grdfilter aurora_raw.nc -Fg4 -D0 -Gaurora.nc
-gmt grdclip aurora.nc -Sb5/NaN -Gaurora_clipped.nc
+gmt nearneighbor "$XYZ" -R-180/180/-90/90 -I0.25 -S3 -Lx -Gaurora_raw.nc
+gmt grdclip aurora_raw.nc -Sb0/NaN -Gaurora_preclip.nc
+gmt grdfilter aurora_preclip.nc -Fg9 -D0 -Gaurora.nc
+gmt grdclip aurora.nc -Sb0/NaN -Gaurora_clipped.nc
 
 # ---------------------------------------------------------------------------
-# Aurora opacity tuning:
-#   MAX_ALPHA  — opacity at full intensity (0.44 = CSI level, 0.30 = subtle)
-#   NORM_MAX   — OVATION value that reaches MAX_ALPHA; values above clamp
-#                  Lower = dim aurora more visible; higher = only storms pop
-#   GAMMA      — curve shape across 5..NORM_MAX:
-#                  1.0 = linear
-#                  >1.0 = dim aurora fades faster, bright stands out more
-#                  <1.0 = dim aurora more visible relative to bright
-# Defaults: NORM_MAX=40 means typical active aurora (val≈30) is ~27% opacity
-#           and storm aurora (val≥40) hits MAX_ALPHA
+# CPT: CSI colorbar exact colors, fully opaque at every value.
+# The Gaussian filter creates the feathering naturally — no alpha needed.
+# Low grid values (val=1-5) map to dark/dim colors that fade into black.
+# High grid values (val=20+) map to vivid green/yellow/orange/red.
+# To make aurora brighter: raise the green values in the CPT.
+# To make it more transparent: lower them.
 # ---------------------------------------------------------------------------
-MAX_ALPHA=0.44
-NORM_MAX=15
-GAMMA=0.7
-
-export MAX_ALPHA NORM_MAX GAMMA
 python3 <<'PYEOF'
-import os
-MAX_ALPHA = float(os.environ['MAX_ALPHA'])
-NORM_MAX  = float(os.environ['NORM_MAX'])
-GAMMA     = float(os.environ['GAMMA'])
-pts = [
-    (  5,   8, 208,   8),
-    ( 10,  48, 252,   0),
-    ( 20, 152, 252,   0),
-    ( 30, 248, 252,   0),
-    ( 40, 240, 200,  16),
-    ( 50, 232, 136,  32),
-    ( 60, 232,  84,  32),
-    ( 70, 240,  40,  16),
-    ( 80, 248,   8,   0),
-    (100, 248,   8,   0),
-]
-def alpha_for(v):
-    t = max(0.0, min(1.0, (v - 5) / (NORM_MAX - 5)))
-    return (t ** GAMMA) * MAX_ALPHA
-def blend(ar, ag, ab, br, bg, bb, a):
-    r = int(round(ar*a + br*(1-a)))
-    g = int(round(ag*a + bg*(1-a)))
-    b = int(round(ab*a + bb*(1-a)))
-    return (min(r,255), min(g,255), min(b,255))
-for fname, bgc in [('aurora_D.cpt',(74,73,74)),('aurora_N.cpt',(0,0,0))]:
-    with open(fname,'w') as f:
-        f.write('# COLOR_MODEL = RGB\n')
-        for i in range(len(pts)-1):
-            v0,r0,g0,b0=pts[i]; v1,r1,g1,b1=pts[i+1]
-            a0=alpha_for(v0); a1=alpha_for(v1)
-            c0=blend(r0,g0,b0,*bgc,a0); c1=blend(r1,g1,b1,*bgc,a1)
-            f.write(f'{v0:3d}  {c0[0]}/{c0[1]}/{c0[2]}   {v1:3d}  {c1[0]}/{c1[1]}/{c1[2]}\n')
-        f.write('N    0/0/0\n')
-PYEOF
+# Pure CSI colors — no blending, no alpha curve
+# Night map (N): raw colors render directly on black background
+# Day map (D): colors adjusted so they look the same against #4A494A gray
 
+csi = [
+    (  1,    0,   8,   0),   # val=1: nearly black
+    (  3,    0,  20,   0),   # val=3: very dim green
+    (  5,    4,  50,   4),   # val=5: faint green
+    ( 10,   24, 124,  24),   # val=10: dark green
+    ( 20,    8, 208,   8),   # val=20: green
+    ( 30,   48, 252,   0),   # val=30: vivid green
+    ( 40,  144, 252,   0),   # val=40: yellow-green
+    ( 50,  248, 252,   0),   # val=50: yellow
+    ( 60,  240, 196,  16),   # val=60: orange-yellow
+    ( 70,  232, 136,  32),   # val=70: orange
+    ( 80,  232,  84,  32),   # val=80: orange-red
+    (100,  248,   0,   0),   # val=100: red
+]
+
+bg_d = (74, 73, 74)
+
+def clamp(x): return min(255, max(0, int(round(x))))
+
+# Dense 1-unit CPT to avoid ribbing from sparse breakpoints
+def csi_color_at(v):
+    for i in range(len(csi)-1):
+        v0,r0,g0,b0 = csi[i]
+        v1,r1,g1,b1 = csi[i+1]
+        if v0 <= v <= v1:
+            t = (v-v0)/(v1-v0) if v1>v0 else 0
+            return (r0+t*(r1-r0), g0+t*(g1-g0), b0+t*(b1-b0))
+    return csi[-1][1], csi[-1][2], csi[-1][3]
+
+# Night CPT: raw CSI colors on black — fully opaque, filter does feathering
+with open('aurora_N.cpt', 'w') as f:
+    f.write('# COLOR_MODEL = RGB\n')
+    for v0 in range(1, 100):
+        v1 = v0 + 1
+        r0,g0,b0 = csi_color_at(v0)
+        r1,g1,b1 = csi_color_at(v1)
+        f.write(f'{v0:3d}  {clamp(r0)}/{clamp(g0)}/{clamp(b0)}   '
+                f'{v1:3d}  {clamp(r1)}/{clamp(g1)}/{clamp(b1)}\n')
+    f.write('N   0/0/0\n')
+
+SHIFT = 13
+with open('aurora_D.cpt', 'w') as f:
+    f.write('# COLOR_MODEL = RGB\n')
+    for v0 in range(1, 100):
+        v1 = v0 + 1
+        r0,g0,b0 = csi_color_at(v0)
+        r1,g1,b1 = csi_color_at(v1)
+        f.write(f'{v0:3d}  {clamp(r0-SHIFT)}/{clamp(g0-SHIFT)}/{clamp(b0-SHIFT)}   '
+                f'{v1:3d}  {clamp(r1-SHIFT)}/{clamp(g1-SHIFT)}/{clamp(b1-SHIFT)}\n')
+    f.write('N   0/0/0\n')
+PYEOF
 
 make_bmp_v4_rgb565_topdown() {
   local inraw="$1" outbmp="$2" W="$3" H="$4"
@@ -148,11 +163,11 @@ biSize = 108
 rmask, gmask, bmask, amask = 0xF800, 0x07E0, 0x001F, 0x0000
 cstype = 0x73524742
 endpoints = b"\x00"*36
-gamma = b"\x00"*12
+gammab = b"\x00"*12
 v4hdr = struct.pack("<IiiHHIIIIII",
     biSize, W, -H, 1, 16, 3, len(pix), 0, 0, 0, 0
 ) + struct.pack("<IIII", rmask, gmask, bmask, amask) \
-  + struct.pack("<I", cstype) + endpoints + gamma
+  + struct.pack("<I", cstype) + endpoints + gammab
 with open(outbmp, "wb") as f:
     f.write(filehdr); f.write(v4hdr); f.write(pix)
 PY
@@ -254,6 +269,7 @@ for SZ in "${SIZES[@]}"; do
 done
 done
 
-rm -f aurora_raw.nc aurora.nc aurora_clipped.nc aurora_D.cpt aurora_N.cpt ovation.xyz
+rm -f aurora_raw.nc aurora_preclip.nc aurora.nc aurora_clipped.nc \
+      aurora_D.cpt aurora_N.cpt ovation.xyz
 
 echo "Done."
