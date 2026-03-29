@@ -10,63 +10,63 @@ print $q->header('text/plain');
 
 # 1. Parse User-Agent (e.g., HamClock/4.22b01)
 my $ua_string = $q->user_agent() || "";
-my ($client_ver) = $ua_string =~ m|/([\d\.]+(?:b\d+)?)i?|; # Captures 4.22 or 4.22b01
+my ($client_ver) = $ua_string =~ m|/([\d\.b]+)|i; 
 
 unless ($client_ver) {
     print "Unknown\n";
     exit;
 }
 
-# 2. Get the current Stable version number from the cache file
+# 2. Get the current Stable version number
 my $stable_ver_num = "";
 my $stable_path = "$cache_dir/HC_RELEASE-stable.txt";
 if (-f $stable_path) {
     open(my $fh, '<', $stable_path) or die $!;
     $stable_ver_num = <$fh>;
-    chomp($stable_ver_num) if $stable_ver_num;
     close($fh);
+    $stable_ver_num =~ s/\s+//g; # Clean up whitespace/newlines
 }
 
-# 3. Determine if we should offer Stable or Beta
+# 3. Determine Offer Type
 my $offer_type = "stable";
 
 if ($client_ver =~ /b/i) {
-    # It's a beta. Extract the base (e.g., 4.22 from 4.22b01)
+    # Extract numeric base: "4.22b01" -> "4.22"
     my ($base_ver) = $client_ver =~ /^([\d\.]+)/;
 
-    # If the user's base version is GREATER than our stable, keep them on beta
-    if ($base_ver && $stable_ver_num && is_version_greater($base_ver, $stable_ver_num)) {
-        $offer_type = "beta";
-    } else {
-        # Base is <= stable (e.g., 4.22b01 vs 4.22), offer stable
-        $offer_type = "stable";
+    # Logic: Only stay on beta if base_ver > stable_ver_num
+    if ($base_ver && $stable_ver_num) {
+        if (version_cmp($base_ver, $stable_ver_num) > 0) {
+            $offer_type = "beta";
+        } else {
+            # base is 4.22, stable is 4.22 -> offer stable
+            $offer_type = "stable";
+        }
     }
-} else {
-    # Not a beta user, stay on stable
-    $offer_type = "stable";
 }
 
-# 4. Output the chosen file content
+# 4. Output the file
 my $final_path = "$cache_dir/HC_RELEASE-$offer_type.txt";
 if (-f $final_path) {
     open(my $fh, '<', $final_path) or die $!;
     local $/;
-    print <$fh>;
+    my $content = <$fh>;
     close($fh);
+    print $content;
 } else {
     print "Unknown\n";
 }
 
-### Helper to compare dotted versions (e.g., 4.9 vs 4.10)
-sub is_version_greater {
+# Robust version comparison: returns 1 if v1 > v2, -1 if v1 < v2, 0 if equal
+sub version_cmp {
     my ($v1, $v2) = @_;
     my @a = split(/\./, $v1);
     my @b = split(/\./, $v2);
-    for (my $i = 0; $i < reverse(sort(@a, @b)); $i++) {
-        $a[$i] //= 0;
-        $b[$i] //= 0;
-        return 1 if $a[$i] > $b[$i];
-        return 0 if $a[$i] < $b[$i];
+    while (@a || @b) {
+        my $curr_a = shift @a || 0;
+        my $curr_b = shift @b || 0;
+        return 1  if $curr_a > $curr_b;
+        return -1 if $curr_a < $curr_b;
     }
     return 0;
 }
