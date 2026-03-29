@@ -57,9 +57,9 @@ with open("ovation.xyz", "w") as f:
     for lon, lat, val in d["coordinates"]:
         if val <= 0:
             continue
-        # OVATION has spurious low values at equatorial/tropical latitudes.
-        # Exclude the tropics entirely — aurora never occurs there.
-        if -40.0 < lat < 40.0:
+        # OVATION has a spurious artifact row at exactly lat=0.
+        # Exclude it — all other latitudes including sub-50 southern aurora are valid.
+        if lat == 0.0:
             continue
         if lon > 180.0:
             lon -= 360.0
@@ -73,7 +73,7 @@ echo "Gridding aurora..."
 gmt nearneighbor "$XYZ" -R-180/180/-90/90 -I0.25 -S3 -Lx -Gaurora_raw.nc
 gmt grdclip aurora_raw.nc -Sb0/NaN -Gaurora_preclip.nc
 gmt grdfilter aurora_preclip.nc -Fg9 -D0 -Gaurora.nc
-gmt grdclip aurora.nc -Sb0/NaN -Gaurora_clipped.nc
+gmt grdclip aurora.nc -Sb2/NaN -Gaurora_clipped.nc
 
 # ---------------------------------------------------------------------------
 # CPT: CSI colorbar exact colors, fully opaque at every value.
@@ -89,13 +89,15 @@ python3 <<'PYEOF'
 # Day map (D): colors adjusted so they look the same against #4A494A gray
 
 csi = [
-    (  1,    0,   8,   0),   # val=1: nearly black
-    (  3,    0,  20,   0),   # val=3: very dim green
-    (  5,    4,  50,   4),   # val=5: faint green
-    ( 10,   24, 124,  24),   # val=10: dark green
-    ( 20,    8, 208,   8),   # val=20: green
-    ( 30,   48, 252,   0),   # val=30: vivid green
-    ( 40,  144, 252,   0),   # val=40: yellow-green
+    (  1,    0,   4,   0),   # val=1: nearly black — filter noise floor
+    (  2,    0,   8,   0),   # val=2: very dim
+    (  3,    0,  20,   0),   # val=3: dim green
+    (  5,    0,  60,   0),   # val=5: faint green
+    (  8,    4, 110,   4),   # val=8: dim-medium green
+    ( 12,    8, 160,   8),   # val=12: medium green
+    ( 18,   16, 210,  16),   # val=18: bright green
+    ( 25,   32, 240,   0),   # val=25: vivid green
+    ( 35,   80, 252,   0),   # val=35: vivid green-yellow
     ( 50,  248, 252,   0),   # val=50: yellow
     ( 60,  240, 196,  16),   # val=60: orange-yellow
     ( 70,  232, 136,  32),   # val=70: orange
@@ -128,16 +130,41 @@ with open('aurora_N.cpt', 'w') as f:
                 f'{v1:3d}  {clamp(r1)}/{clamp(g1)}/{clamp(b1)}\n')
     f.write('N   0/0/0\n')
 
-SHIFT = 13
+# Day CPT: values below AURORA_THRESHOLD are set to exact background color
+# so the Gaussian filter's outer decay tail is completely invisible against
+# the day map gray. Above threshold, same vivid CSI colors as night map.
+# The threshold should match the post-filter grdclip value (Sb2/NaN) — 
+# anything that survives the clip renders as aurora color, not background.
+BG_D = (74, 73, 74)
+FADE_START = 2   # val where fade from background begins
+FADE_END   = 8   # val where aurora color is fully visible
+
 with open('aurora_D.cpt', 'w') as f:
     f.write('# COLOR_MODEL = RGB\n')
     for v0 in range(1, 100):
         v1 = v0 + 1
         r0,g0,b0 = csi_color_at(v0)
         r1,g1,b1 = csi_color_at(v1)
-        f.write(f'{v0:3d}  {clamp(r0-SHIFT)}/{clamp(g0-SHIFT)}/{clamp(b0-SHIFT)}   '
-                f'{v1:3d}  {clamp(r1-SHIFT)}/{clamp(g1-SHIFT)}/{clamp(b1-SHIFT)}\n')
-    f.write('N   0/0/0\n')
+        # Below FADE_START: exact background color
+        # Between FADE_START and FADE_END: smooth transition
+        # Above FADE_END: full aurora color
+        for vi, (ri,gi,bi) in [(v0,(r0,g0,b0)), (v1,(r1,g1,b1))]:
+            if vi < FADE_START:
+                nr,ng,nb = BG_D
+            elif vi < FADE_END:
+                t = (vi - FADE_START) / (FADE_END - FADE_START)
+                nr = BG_D[0] + t*(ri - BG_D[0])
+                ng = BG_D[1] + t*(gi - BG_D[1])
+                nb = BG_D[2] + t*(bi - BG_D[2])
+            else:
+                nr,ng,nb = ri,gi,bi
+            if vi == v0:
+                r0,g0,b0 = nr,ng,nb
+            else:
+                r1,g1,b1 = nr,ng,nb
+        f.write(f'{v0:3d}  {clamp(r0)}/{clamp(g0)}/{clamp(b0)}   '
+                f'{v1:3d}  {clamp(r1)}/{clamp(g1)}/{clamp(b1)}\n')
+    f.write('N   74/73/74\n')
 PYEOF
 
 make_bmp_v4_rgb565_topdown() {
