@@ -11,7 +11,7 @@ print $q->header('text/plain');
 
 # 1. Parse User-Agent (e.g., HamClock/4.22b01)
 my $ua_string = $q->user_agent() || "";
-my ($client_ver) = $ua_string =~ m|/([\d\.b]+)|i; 
+my ($client_ver) = $ua_string =~ m|HamClock-.*?/([\d\.b]+)|i;
 
 unless ($client_ver) {
     print "Unknown\n";
