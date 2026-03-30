@@ -89,5 +89,5 @@ LANG=C
 5 1,5,9,13,17,21 * * * /opt/hamclock-backend/scripts/update_aurora_maps.sh  >> /opt/hamclock-backend/logs/update_aurora_maps.log 2>&1
 0 0,12 * * *           /opt/hamclock-backend/scripts/update_wx_mb_maps.sh   >> /opt/hamclock-backend/logs/update_wx_mb_maps.log  2>&1
 
-# CSI period was 19 1-23/2 - Frequency increased to allow scripts to pull smaller chunks of data every 5 min to avoid rate limits
-*/5 * * * * OPENMETEO_CHUNK=50 OPENMETEO_REQS_PER_RUN=1 /usr/bin/perl /opt/hamclock-backend/scripts/update_world_wx.pl >>/opt/hamclock-backend/logs/worldwx.log 2>&1
+# CSI period was 19 1-23/2 - Frequency increased to allow scripts to pull smaller chunks of data every 2 min to avoid rate limits
+*/2 * * * * /opt/hamclock-backend/update_world_wx.py >>/opt/hamclock-backend/logs/update_world_wx.log 2>&1

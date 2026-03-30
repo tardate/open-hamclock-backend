@@ -6,3 +6,5 @@
 
 # packages required by hamclock-backend
 zstd
+python3-pip
+python3-numpy

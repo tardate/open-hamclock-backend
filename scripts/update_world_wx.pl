@@ -8,10 +8,10 @@ Fetch order: cities from cities.txt (snapped to grid) first, then remaining
 grid points — so named cities always have the freshest data.
 
 Usage:
-    OWM_API_KEY=your_key python3 update_world_wx.py
+    OPEN_WEATHER_API_KEY=your_key python3 update_world_wx.py
 
 Environment variables:
-    OWM_API_KEY          Required. OpenWeatherMap API key.
+    OPEN_WEATHER_API_KEY Required. OpenWeatherMap API key.
     WORLDWX_OUT          Output wx.txt path.
                          Default: /opt/hamclock-backend/htdocs/ham/HamClock/worldwx/wx.txt
     WORLDWX_TMP          Directory for cache/state files.
@@ -23,7 +23,7 @@ Environment variables:
     OWM_BACKOFF_CAP      Max backoff seconds. Default: 60
 
 Cron example (10 req every 2 min → all ~1,700 cities fresh in ~5 hrs):
-    */2 * * * * OWM_API_KEY=YOUR_KEY python3 /opt/hamclock-backend/update_world_wx.py
+    */2 * * * * OPEN_WEATHER_API_KEY=YOUR_KEY python3 /opt/hamclock-backend/update_world_wx.py
 """
 
 import json
@@ -38,10 +38,27 @@ try:
 except ImportError:
     sys.exit("ERROR: 'requests' library not found. Run: pip3 install requests")
 
+try:
+    from global_land_mask import globe as _globe
+    _HAS_LAND_MASK = True
+except ImportError:
+    _HAS_LAND_MASK = False
+    print("WARN: global-land-mask not installed; ocean skipping disabled. "
+          "Run: pip3 install global-land-mask", file=__import__('sys').stderr)
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-OWM_API_KEY   = os.environ.get("OWM_API_KEY", "")
+OPEN_WEATHER_API_KEY   = os.environ.get("OPEN_WEATHER_API_KEY", "")
+
+# If API key not in env, try reading from .env file
+if not OPEN_WEATHER_API_KEY and os.path.exists("/opt/hamclock-backend/.env"):
+    with open("/opt/hamclock-backend/.env", "r") as f:
+        for line in f:
+            if line.startswith("OPEN_WEATHER_API_KEY="):
+                OPEN_WEATHER_API_KEY = line.strip().split("=", 1)[1].strip("'\"")
+                break
+
 OUT_TXT       = os.environ.get(
     "WORLDWX_OUT",
     "/opt/hamclock-backend/htdocs/ham/HamClock/worldwx/wx.txt",
@@ -65,8 +82,6 @@ BACKOFF_CAP   = float(os.environ.get("OWM_BACKOFF_CAP",   "60"))
 # ---------------------------------------------------------------------------
 LATS = list(range(-90, 91, 4))   # -90 .. 90  step 4 → 46 values
 LONS = list(range(-180, 181, 5)) # -180 .. 180 step 5 → 73 values
-
-GRID_SET = {(lat, lon) for lon in LONS for lat in LATS}
 
 # Fallback record for grid points not yet fetched
 FALLBACK = {
@@ -167,13 +182,15 @@ def load_cities(path):
 # Grid helpers
 # ---------------------------------------------------------------------------
 def snap_to_grid(lat, lon):
-    """Snap a float lat/lon to the nearest wx.txt grid point."""
-    snapped_lat = round(lat / 4) * 4
-    snapped_lon = round(lon / 5) * 5
-    # Clamp to valid grid range
-    snapped_lat = max(-90, min(90,  snapped_lat))
-    snapped_lon = max(-180, min(180, snapped_lon))
-    return (snapped_lat, snapped_lon)
+    """Snap a float lat/lon to the nearest point that exists in LATS/LONS.
+
+    Simple rounding to nearest multiple of 4/5 does NOT work because the
+    lat grid steps from -90 by 4 and skips 0 (goes -2, 2). We must find
+    the nearest value actually present in the grid arrays.
+    """
+    best_lat = min(LATS, key=lambda x: abs(x - lat))
+    best_lon = min(LONS, key=lambda x: abs(x - lon))
+    return (best_lat, best_lon)
 
 
 def build_fetch_queue(cities):
@@ -181,26 +198,40 @@ def build_fetch_queue(cities):
     Build ordered fetch queue:
       1. Cities from cities.txt snapped to grid (highest priority).
       2. Remaining grid points not covered by any city.
-    Returns list of dicts: {lat, lon, label}.
+    Returns (queue, city_slots) where city_slots is the number of
+    city-derived entries at the front of the queue.
     """
     seen  = set()
     queue = []
 
-    # Stage 1: named cities — deduplicated by grid point
+    # Stage 1: named cities — snap each to nearest grid point, deduplicate.
+    # snap_to_grid always clamps to valid range so no GRID_SET filter needed.
     for city in cities:
         gp = snap_to_grid(city["lat"], city["lon"])
-        if gp not in seen and gp in GRID_SET:
+        if gp not in seen:
             seen.add(gp)
-            queue.append({"lat": gp[0], "lon": gp[1], "label": city["label"]})
+            queue.append({"lat": gp[0], "lon": gp[1], "label": city["label"], "fetch_lat": city["lat"], "fetch_lon": city["lon"]})
 
-    # Stage 2: remaining grid points (lon-major to match wx.txt write order)
+    city_slots = len(queue)
+
+    # Stage 2: remaining grid points (lon-major to match wx.txt write order).
+    # Skip pure-ocean points that have no city — no useful weather display there.
+    # If global_land_mask is unavailable, fall back to fetching all points.
+    skipped = 0
     for lon in LONS:
         for lat in LATS:
             if (lat, lon) not in seen:
+                if _HAS_LAND_MASK and not _globe.is_land(lat, lon):
+                    skipped += 1
+                    continue  # pure ocean, no city — skip
                 seen.add((lat, lon))
-                queue.append({"lat": lat, "lon": lon, "label": None})
+                queue.append({"lat": lat, "lon": lon, "label": None, "fetch_lat": lat, "fetch_lon": lon})
 
-    return queue
+    if skipped:
+        print(f"INFO: skipped {skipped} pure-ocean grid points (no city nearby).",
+              file=__import__('sys').stderr)
+
+    return queue, city_slots
 
 # ---------------------------------------------------------------------------
 # OWM fetch with retry / exponential backoff
@@ -233,7 +264,7 @@ def fetch_owm(session, lat, lon):
     Returns a parsed record dict on success, or None to signal the caller
     to stop making requests this run (rate-limit or repeated failure).
     """
-    params  = {"lat": lat, "lon": lon, "appid": OWM_API_KEY, "units": "metric"}
+    params  = {"lat": lat, "lon": lon, "appid": OPEN_WEATHER_API_KEY, "units": "metric"}
     backoff = BACKOFF_START
 
     for attempt in range(1, MAX_TRIES + 1):
@@ -255,7 +286,7 @@ def fetch_owm(session, lat, lon):
                 return None
 
         elif r.status_code == 401:
-            sys.exit("ERROR: OWM API key rejected (401). Check OWM_API_KEY.")
+            sys.exit("ERROR: OWM API key rejected (401). Check OPEN_WEATHER_API_KEY.")
 
         elif r.status_code == 429:
             print("WARN: OWM rate limit (429) — stopping requests this run.",
@@ -329,22 +360,22 @@ def write_wx_txt(out_path, cache):
 # ---------------------------------------------------------------------------
 def main():
     # Validate API key before doing anything else
-    if not OWM_API_KEY:
+    if not OPEN_WEATHER_API_KEY:
         sys.exit(
-            "ERROR: OWM_API_KEY is not set.\n"
-            "Export it or prefix the command: OWM_API_KEY=your_key python3 update_world_wx.py"
+            "ERROR: OPEN_WEATHER_API_KEY is not set.\n"
+            "Export it, put OPEN_WEATHER_API_KEY in /opt/hamclock-backend/.env, or prefix: OPEN_WEATHER_API_KEY=your_key python3 update_world_wx.py"
         )
 
     os.makedirs(TMP_DIR, exist_ok=True)
 
     # Load cities and build prioritised fetch queue
     cities = load_cities(CITIES_FILE)
-    queue  = build_fetch_queue(cities)
+    queue, city_slots = build_fetch_queue(cities)
     total  = len(queue)
 
     print(f"INFO: queue has {total} points "
-          f"({len(cities)} cities loaded, "
-          f"{total - len(cities)} remaining grid points).",
+          f"({city_slots} city grid points first, "
+          f"{total - city_slots} remaining grid points).",
           file=sys.stderr)
 
     # Load persistent state
@@ -361,12 +392,18 @@ def main():
     fetched = 0
     for _ in range(REQS_PER_RUN):
         entry = queue[idx]
-        lat, lon = entry["lat"], entry["lon"]
+        lat, lon = entry["lat"], entry["lon"]           # grid key coords
+        fetch_lat = entry.get("fetch_lat", lat)         # actual fetch coords
+        fetch_lon = entry.get("fetch_lon", lon)
         label = entry["label"] or f"grid({lat},{lon})"
 
-        print(f"INFO: fetching [{idx+1}/{total}] {label} ({lat},{lon})", file=sys.stderr)
+        # Show both if city coords differ significantly from grid coords
+        if abs(fetch_lat - lat) > 0.01 or abs(fetch_lon - lon) > 0.01:
+            print(f"INFO: fetching [{idx+1}/{total}] {label} @ ({fetch_lat:.2f},{fetch_lon:.2f}) → grid ({lat},{lon})", file=sys.stderr)
+        else:
+            print(f"INFO: fetching [{idx+1}/{total}] {label} ({lat},{lon})", file=sys.stderr)
 
-        result = fetch_owm(session, lat, lon)
+        result = fetch_owm(session, fetch_lat, fetch_lon)
         if result is None:
             # Rate-limited or repeated failure — stop now but still write output
             break

@@ -25,6 +25,8 @@ RUN apt update && \
     tar -x --zstd -f ohb-maps.tar.zst -C ohb-maps --strip-components=1 maps/ && \
     rm -Rf ohb-maps.tar.zst
 
+RUN pip install --break-system-packages global-land-mask global_land_mask
+
 #######################################################
 # Build the real image
 #######################################################
@@ -64,6 +66,7 @@ RUN cd /opt/hamclock-backend && \
         -subj "/C=US/ST=State/L=City/O=Organization/OU=IT/CN=localhost"
 
 # Install hamclock-backend
+COPY --exclude=**/__pycache__/ --exclude=**/__init__.py --from=build-support /usr/local/lib/python3.13/dist-packages/ /usr/local/lib/python3.13/dist-packages/
 COPY --exclude=docker/ohb-maps.tar.zst . /opt/hamclock-backend/
 RUN cd /opt/hamclock-backend && \
     mv  docker/run.sh /opt && \
