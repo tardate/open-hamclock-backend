@@ -1,264 +1,394 @@
-#!/usr/bin/env perl
-use strict;
-use warnings;
+#!/usr/bin/env python3
+"""
+update_world_wx.py — Fetch world weather via OpenWeatherMap and write wx.txt
+for HamClock in the exact format produced by the original update_world_wx.pl.
 
-use LWP::UserAgent;
-use JSON qw(decode_json encode_json);
-use File::Path qw(make_path);
-use Fcntl qw(:flock);
-use File::Copy qw(move);
+Output grid: lat -90..90 step 4, lon -180..180 step 5 (46×73 = 3,358 points).
+Fetch order: cities from cities.txt (snapped to grid) first, then remaining
+grid points — so named cities always have the freshest data.
 
-# -----------------------
-# Config
-# -----------------------
-my $OUT_TXT    = '/opt/hamclock-backend/htdocs/ham/HamClock/worldwx/wx.txt';
-my $TMP_DIR    = '/opt/hamclock-backend/tmp/worldwx';
-my $CACHE_JSON = "$TMP_DIR/cache.json";
-my $STATE_JSON = "$TMP_DIR/state.json";
-my $LOCK_FILE  = "$TMP_DIR/.lock";
+Usage:
+    OWM_API_KEY=your_key python3 update_world_wx.py
 
-# How many points per request (keep modest to avoid 5xx; 100-300 is usually safe)
-my $CHUNK = $ENV{OPENMETEO_CHUNK} // 200;
+Environment variables:
+    OWM_API_KEY          Required. OpenWeatherMap API key.
+    WORLDWX_OUT          Output wx.txt path.
+                         Default: /opt/hamclock-backend/htdocs/ham/HamClock/worldwx/wx.txt
+    WORLDWX_TMP          Directory for cache/state files.
+                         Default: /opt/hamclock-backend/tmp/worldwx
+    OWM_REQS_PER_RUN     Requests to make per invocation. Default: 10
+    OWM_SLEEP            Seconds to sleep between requests. Default: 1.1
+    OWM_RETRIES          Max retry attempts per request. Default: 3
+    OWM_BACKOFF_START    Initial backoff seconds. Default: 5
+    OWM_BACKOFF_CAP      Max backoff seconds. Default: 60
 
-# How many requests to attempt per run (this is your main rate limiter)
-my $REQS_PER_RUN = $ENV{OPENMETEO_REQS_PER_RUN} // 1;
+Cron example (10 req every 2 min → all ~1,700 cities fresh in ~5 hrs):
+    */2 * * * * OWM_API_KEY=YOUR_KEY python3 /opt/hamclock-backend/update_world_wx.py
+"""
 
-# Sleep between requests within a run
-my $SLEEP_BETWEEN_REQS = $ENV{OPENMETEO_SLEEP} // 1;
+import json
+import os
+import re
+import sys
+import time
+import warnings
 
-# Retry/backoff (kept conservative)
-my $MAX_TRIES      = $ENV{OPENMETEO_RETRIES} // 6;
-my $BACKOFF_START  = $ENV{OPENMETEO_BACKOFF_START} // 5;
-my $BACKOFF_CAP    = $ENV{OPENMETEO_BACKOFF_CAP} // 60;
+try:
+    import requests
+except ImportError:
+    sys.exit("ERROR: 'requests' library not found. Run: pip3 install requests")
 
-# -----------------------
-# Grid: lat -90..90 step 4, lon -180..180 step 5
-# -----------------------
-my @LATS = (-90, -86, -82, -78, -74, -70, -66, -62, -58, -54, -50, -46, -42, -38, -34, -30, -26, -22, -18, -14, -10, -6, -2,
-             2,   6,  10,  14,  18,  22,  26,  30,  34,  38,  42,  46,  50,  54,  58,  62,  66,  70,  74,  78,  82,  86,  90);
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+OWM_API_KEY   = os.environ.get("OWM_API_KEY", "")
+OUT_TXT       = os.environ.get(
+    "WORLDWX_OUT",
+    "/opt/hamclock-backend/htdocs/ham/HamClock/worldwx/wx.txt",
+)
+TMP_DIR       = os.environ.get(
+    "WORLDWX_TMP",
+    "/opt/hamclock-backend/tmp/worldwx",
+)
+CITIES_FILE   = "/opt/hamclock-backend/htdocs/ham/HamClock/cities2.txt"
+CACHE_JSON    = os.path.join(TMP_DIR, "cache.json")
+STATE_JSON    = os.path.join(TMP_DIR, "state.json")
 
-my @LONS = (-180, -175, -170, -165, -160, -155, -150, -145, -140, -135, -130, -125, -120, -115, -110, -105, -100,  -95,  -90,  -85,  -80,  -75,
-            -70,  -65,  -60,  -55,  -50,  -45,  -40,  -35,  -30,  -25,  -20,  -15,  -10,   -5,    0,    5,   10,   15,   20,   25,   30,   35,
-             40,   45,   50,   55,   60,   65,   70,   75,   80,   85,   90,   95,  100,  105,  110,  115,  120,  125,  130,  135,  140,  145,
-            150,  155,  160,  165,  170,  175,  180);
+REQS_PER_RUN  = int(os.environ.get("OWM_REQS_PER_RUN",   "10"))
+SLEEP_BETWEEN = float(os.environ.get("OWM_SLEEP",         "1.1"))
+MAX_TRIES     = int(os.environ.get("OWM_RETRIES",         "3"))
+BACKOFF_START = float(os.environ.get("OWM_BACKOFF_START", "5"))
+BACKOFF_CAP   = float(os.environ.get("OWM_BACKOFF_CAP",   "60"))
 
-# -----------------------
+# ---------------------------------------------------------------------------
+# Fixed output grid — must match wx.txt exactly
+# ---------------------------------------------------------------------------
+LATS = list(range(-90, 91, 4))   # -90 .. 90  step 4 → 46 values
+LONS = list(range(-180, 181, 5)) # -180 .. 180 step 5 → 73 values
+
+GRID_SET = {(lat, lon) for lon in LONS for lat in LATS}
+
+# Fallback record for grid points not yet fetched
+FALLBACK = {
+    "temp": 0.0, "hum": 0.0, "mps": 0.0,
+    "dir":  0.0, "prs": 0.0, "wx": "Unknown", "tz": 0,
+}
+
+# OWM API endpoint
+OWM_URL = "https://api.openweathermap.org/data/2.5/weather"
+
+# ---------------------------------------------------------------------------
+# OWM weather ID → HamClock wx token
+# ---------------------------------------------------------------------------
+def wx_from_owm_id(owm_id):
+    if owm_id is None:
+        return "Unknown"
+    if owm_id == 800:
+        return "Clear"
+    if 801 <= owm_id <= 804:
+        return "Clouds"
+    if 700 <= owm_id <= 799:
+        return "Fog"
+    if 300 <= owm_id <= 321:
+        return "Rain"       # drizzle
+    if owm_id in (500, 501, 502, 503, 504):
+        return "Rain"
+    if 520 <= owm_id <= 531:
+        return "Rain"       # showers
+    if owm_id == 511:
+        return "Snow"       # freezing rain
+    if 600 <= owm_id <= 622:
+        return "Snow"
+    if 200 <= owm_id <= 232:
+        return "Thunderstorm"
+    return "Unknown"
+
+# ---------------------------------------------------------------------------
 # JSON helpers
-# -----------------------
-sub read_json_file {
-    my ($path, $default) = @_;
-    $default //= {};
-    return $default if !-f $path;
-    open my $fh, '<', $path or return $default;
-    local $/;
-    my $raw = <$fh>;
-    close $fh;
-    my $obj = eval { decode_json($raw) };
-    return (defined($obj) ? $obj : $default);
-}
+# ---------------------------------------------------------------------------
+def read_json(path, default=None):
+    """Read a JSON file, returning default on any error."""
+    if default is None:
+        default = {}
+    if not os.path.isfile(path):
+        return default
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception as exc:
+        print(f"WARN: could not read {path}: {exc}", file=sys.stderr)
+        return default
 
-sub write_json_atomic {
-    my ($path, $obj) = @_;
-    my $tmp = "$path.$$";
-    open my $fh, '>', $tmp or die "ERROR: cannot write $tmp: $!\n";
-    print {$fh} encode_json($obj);
-    close $fh;
-    move $tmp, $path or die "ERROR: move $tmp -> $path failed: $!\n";
-}
 
-# -----------------------
-# Wx mapping (Open-Meteo weather_code -> HamClock-ish token)
-# -----------------------
-sub wx_from_code {
-    my ($code) = @_;
-    return 'Unknown' if !defined $code;
+def write_json_atomic(path, obj):
+    """Write obj as JSON to path atomically (tmp file + os.replace)."""
+    tmp = path + f".{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(obj, fh)
+        os.replace(tmp, path)
+    except Exception as exc:
+        print(f"WARN: could not write {path}: {exc}", file=sys.stderr)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
-    return 'Clear'  if $code == 0;
-    return 'Clouds' if $code == 1 || $code == 2 || $code == 3;
-    return 'Fog'    if $code == 45 || $code == 48;
-    return 'Rain'   if ($code >= 51 && $code <= 67) || ($code >= 80 && $code <= 82);
-    return 'Snow'   if ($code >= 71 && $code <= 77) || ($code >= 85 && $code <= 86);
-    return 'Thunderstorm' if ($code >= 95 && $code <= 99);
+# ---------------------------------------------------------------------------
+# City list
+# ---------------------------------------------------------------------------
+_CITY_RE = re.compile(r'^(-?\d+\.?\d*),\s*(-?\d+\.?\d*),\s*"(.+)"')
 
-    return 'Clouds';
-}
+def load_cities(path):
+    """
+    Parse cities.txt into a list of dicts: {lat, lon, label}.
+    Returns empty list with a warning if the file is missing or unreadable.
+    """
+    if not os.path.isfile(path):
+        print(f"WARN: cities file not found: {path} — fetching grid in default order",
+              file=sys.stderr)
+        return []
+    cities = []
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                m = _CITY_RE.match(line.strip())
+                if m:
+                    cities.append({
+                        "lat":   float(m.group(1)),
+                        "lon":   float(m.group(2)),
+                        "label": m.group(3),
+                    })
+    except Exception as exc:
+        print(f"WARN: error reading {path}: {exc}", file=sys.stderr)
+    return cities
 
-sub fmt_line {
-    my ($lat, $lon, $r) = @_;
-    return sprintf(
-        "%7d %7d %7.1f %7.1f %7.1f %7.1f %7.1f %-14s %7d\n",
-        $lat, $lon,
-        $r->{temp} // 0,
-        $r->{hum}  // 0,
-        $r->{mps}  // 0,
-        $r->{dir}  // 0,
-        $r->{prs}  // 0,
-        ($r->{wx}  // 'Unknown'),
-        ($r->{tz}  // 0),
-    );
-}
+# ---------------------------------------------------------------------------
+# Grid helpers
+# ---------------------------------------------------------------------------
+def snap_to_grid(lat, lon):
+    """Snap a float lat/lon to the nearest wx.txt grid point."""
+    snapped_lat = round(lat / 4) * 4
+    snapped_lon = round(lon / 5) * 5
+    # Clamp to valid grid range
+    snapped_lat = max(-90, min(90,  snapped_lat))
+    snapped_lon = max(-180, min(180, snapped_lon))
+    return (snapped_lat, snapped_lon)
 
-# -----------------------
-# HTTP fetch with retry/backoff
-# Returns decoded JSON on success, undef on repeated failure.
-# Special-case "Hourly API request limit exceeded" => return undef immediately.
-# -----------------------
-sub http_get_json_retry {
-    my ($ua, $url) = @_;
 
-    my $sleep_s = $BACKOFF_START;
+def build_fetch_queue(cities):
+    """
+    Build ordered fetch queue:
+      1. Cities from cities.txt snapped to grid (highest priority).
+      2. Remaining grid points not covered by any city.
+    Returns list of dicts: {lat, lon, label}.
+    """
+    seen  = set()
+    queue = []
 
-    for (my $try = 1; $try <= $MAX_TRIES; $try++) {
-        my $res = $ua->get($url);
+    # Stage 1: named cities — deduplicated by grid point
+    for city in cities:
+        gp = snap_to_grid(city["lat"], city["lon"])
+        if gp not in seen and gp in GRID_SET:
+            seen.add(gp)
+            queue.append({"lat": gp[0], "lon": gp[1], "label": city["label"]})
 
-        if ($res->is_success) {
-            my $body = $res->decoded_content;
-            my $j = eval { decode_json($body) };
-            return $j if $j;
-            warn "WARN: JSON parse failed (try $try/$MAX_TRIES)\n";
-        } else {
-            my $code = $res->code;
-            my $body = $res->decoded_content // '';
+    # Stage 2: remaining grid points (lon-major to match wx.txt write order)
+    for lon in LONS:
+        for lat in LATS:
+            if (lat, lon) not in seen:
+                seen.add((lat, lon))
+                queue.append({"lat": lat, "lon": lon, "label": None})
 
-            if ($code == 429) {
-                if ($body =~ /Hourly API request limit exceeded/i) {
-                    warn "WARN: Open-Meteo hourly limit exceeded; stopping requests this run.\n";
-                    return undef;
-                }
-                my $wait = $sleep_s;
-                $wait = $BACKOFF_CAP if $wait > $BACKOFF_CAP;
-                warn "WARN: Open-Meteo 429. Waiting ${wait}s (try $try/$MAX_TRIES)\n";
-                sleep($wait);
-                $sleep_s = ($sleep_s < $BACKOFF_CAP) ? ($sleep_s * 2) : $BACKOFF_CAP;
-                next;
-            }
+    return queue
 
-            if ($code == 500 || $code == 502 || $code == 503 || $code == 504) {
-                my $wait = $sleep_s;
-                $wait = $BACKOFF_CAP if $wait > $BACKOFF_CAP;
-                warn "WARN: Open-Meteo HTTP $code. Waiting ${wait}s (try $try/$MAX_TRIES)\n";
-                sleep($wait);
-                $sleep_s = ($sleep_s < $BACKOFF_CAP) ? ($sleep_s * 2) : $BACKOFF_CAP;
-                next;
-            }
+# ---------------------------------------------------------------------------
+# OWM fetch with retry / exponential backoff
+# ---------------------------------------------------------------------------
+def parse_owm(data):
+    """Extract weather fields from an OWM /weather JSON response."""
+    main    = data.get("main", {})
+    wind    = data.get("wind", {})
+    weather = data.get("weather", [{}])
+    owm_id  = weather[0].get("id") if weather else None
 
-            warn "WARN: Open-Meteo HTTP $code (try $try/$MAX_TRIES)\n";
-            sleep($sleep_s);
-            $sleep_s = ($sleep_s < $BACKOFF_CAP) ? ($sleep_s * 2) : $BACKOFF_CAP;
-        }
+    # Prefer sea-level pressure; fall back to station pressure
+    prs = main.get("sea_level") or main.get("pressure") or 0.0
+
+    return {
+        "temp": float(main.get("temp",     0.0)),
+        "hum":  float(main.get("humidity", 0.0)),
+        "mps":  float(wind.get("speed",    0.0)),
+        "dir":  float(wind.get("deg",      0.0)),
+        "prs":  float(prs),
+        "wx":   wx_from_owm_id(owm_id),
+        "tz":   int(data.get("timezone",   0)),
+        "ts":   int(time.time()),
     }
 
-    return undef;
-}
 
-# -----------------------
+def fetch_owm(session, lat, lon):
+    """
+    Fetch current weather for (lat, lon) from OWM.
+    Returns a parsed record dict on success, or None to signal the caller
+    to stop making requests this run (rate-limit or repeated failure).
+    """
+    params  = {"lat": lat, "lon": lon, "appid": OWM_API_KEY, "units": "metric"}
+    backoff = BACKOFF_START
+
+    for attempt in range(1, MAX_TRIES + 1):
+        try:
+            r = session.get(OWM_URL, params=params, timeout=10)
+        except requests.RequestException as exc:
+            print(f"WARN: network error (attempt {attempt}/{MAX_TRIES}): {exc}",
+                  file=sys.stderr)
+            time.sleep(min(backoff, BACKOFF_CAP))
+            backoff = min(backoff * 2, BACKOFF_CAP)
+            continue
+
+        if r.status_code == 200:
+            try:
+                return parse_owm(r.json())
+            except Exception as exc:
+                print(f"WARN: JSON parse error at ({lat},{lon}): {exc}",
+                      file=sys.stderr)
+                return None
+
+        elif r.status_code == 401:
+            sys.exit("ERROR: OWM API key rejected (401). Check OWM_API_KEY.")
+
+        elif r.status_code == 429:
+            print("WARN: OWM rate limit (429) — stopping requests this run.",
+                  file=sys.stderr)
+            return None  # caller breaks the loop
+
+        elif r.status_code in (500, 502, 503, 504):
+            print(f"WARN: OWM HTTP {r.status_code} (attempt {attempt}/{MAX_TRIES})",
+                  file=sys.stderr)
+            time.sleep(min(backoff, BACKOFF_CAP))
+            backoff = min(backoff * 2, BACKOFF_CAP)
+
+        else:
+            print(f"WARN: OWM HTTP {r.status_code} at ({lat},{lon}) "
+                  f"(attempt {attempt}/{MAX_TRIES})", file=sys.stderr)
+            time.sleep(min(backoff, BACKOFF_CAP))
+            backoff = min(backoff * 2, BACKOFF_CAP)
+
+    print(f"WARN: giving up on ({lat},{lon}) after {MAX_TRIES} attempts.",
+          file=sys.stderr)
+    return None
+
+# ---------------------------------------------------------------------------
+# wx.txt output
+# ---------------------------------------------------------------------------
+def fmt_line(lat, lon, r):
+    """
+    Format one data row to match the exact column layout of wx.txt:
+      %7d %7d %7.1f %7.1f %7.1f %7.1f %7.1f %-16s%d
+    The wx token is left-justified in a 16-char field with no separator
+    before the TZ integer, which matches the reference file exactly.
+    """
+    return (
+        f"{lat:7d} {lon:7d} "
+        f"{r['temp']:7.1f} {r['hum']:7.1f} "
+        f"{r['mps']:7.1f} {r['dir']:7.1f} "
+        f"{r['prs']:7.1f} {r['wx']:<16s}"
+        f"{r['tz']:d}\n"
+    )
+
+
+def write_wx_txt(out_path, cache):
+    """
+    Write the full wx.txt grid atomically.
+    Iterates lon-major (outer LONS, inner LATS) with a blank line between
+    lon groups — identical structure to the original Perl output.
+    """
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    tmp_path = out_path + f".{os.getpid()}.tmp"
+
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            fh.write("#   lat     lng  temp,C     %hum    mps     dir    mmHg    Wx           TZ\n")
+            for lon in LONS:
+                for lat in LATS:
+                    key = f"{lat},{lon}"
+                    r   = cache.get(key, FALLBACK)
+                    fh.write(fmt_line(lat, lon, r))
+                fh.write("\n")  # blank line between lon groups
+        os.replace(tmp_path, out_path)
+    except Exception as exc:
+        print(f"ERROR: could not write {out_path}: {exc}", file=sys.stderr)
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+# ---------------------------------------------------------------------------
 # Main
-# -----------------------
-make_path($TMP_DIR) if !-d $TMP_DIR;
+# ---------------------------------------------------------------------------
+def main():
+    # Validate API key before doing anything else
+    if not OWM_API_KEY:
+        sys.exit(
+            "ERROR: OWM_API_KEY is not set.\n"
+            "Export it or prefix the command: OWM_API_KEY=your_key python3 update_world_wx.py"
+        )
 
-# Lock to prevent overlapping runs
-open my $lockfh, '>', $LOCK_FILE or die "ERROR: cannot open lock $LOCK_FILE: $!\n";
-flock($lockfh, LOCK_EX|LOCK_NB) or die "ERROR: another worldwx run is already in progress\n";
+    os.makedirs(TMP_DIR, exist_ok=True)
 
-my $cache = read_json_file($CACHE_JSON, {});
-my $state = read_json_file($STATE_JSON, { idx => 0 });
+    # Load cities and build prioritised fetch queue
+    cities = load_cities(CITIES_FILE)
+    queue  = build_fetch_queue(cities)
+    total  = len(queue)
 
-# Build points (lon-major blocks, lat ascending)
-my @points;
-for my $lon (@LONS) {
-    for my $lat (@LATS) {
-        push @points, [$lat, $lon];
-    }
-}
-my $TOTAL = scalar(@points);
-$state->{idx} = 0 if !defined($state->{idx}) || $state->{idx} !~ /^\d+$/ || $state->{idx} >= $TOTAL;
+    print(f"INFO: queue has {total} points "
+          f"({len(cities)} cities loaded, "
+          f"{total - len(cities)} remaining grid points).",
+          file=sys.stderr)
 
-my $ua = LWP::UserAgent->new(
-    timeout => 30,
-    agent   => 'ohb-worldwx-openmeteo-rot/1.0',
-);
+    # Load persistent state
+    cache = read_json(CACHE_JSON, {})
+    state = read_json(STATE_JSON, {"idx": 0})
 
-# Perform only a small number of requests per run
-for (my $r = 0; $r < $REQS_PER_RUN; $r++) {
-    my $start = $state->{idx};
-    my $end   = $start + $CHUNK - 1;
-    $end = $TOTAL - 1 if $end >= $TOTAL;
+    idx = int(state.get("idx", 0)) % total   # safe wrap if queue changed size
 
-    my (@lat_list, @lon_list);
-    for my $i ($start .. $end) {
-        push @lat_list, $points[$i][0];
-        push @lon_list, $points[$i][1];
-    }
+    # HTTP session (connection pooling + shared headers)
+    session = requests.Session()
+    session.headers.update({"User-Agent": "hamclock-worldwx-py/1.0"})
 
-    my $lat_q = join(',', @lat_list);
-    my $lon_q = join(',', @lon_list);
+    # Fetch loop
+    fetched = 0
+    for _ in range(REQS_PER_RUN):
+        entry = queue[idx]
+        lat, lon = entry["lat"], entry["lon"]
+        label = entry["label"] or f"grid({lat},{lon})"
 
-    # No timezone=auto; emit TZ=0 for all points
-    my $url =
-        "https://api.open-meteo.com/v1/forecast"
-        . "?latitude=$lat_q"
-        . "&longitude=$lon_q"
-        . "&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,surface_pressure,weather_code"
-        . "&wind_speed_unit=ms";
+        print(f"INFO: fetching [{idx+1}/{total}] {label} ({lat},{lon})", file=sys.stderr)
 
-    my $j = http_get_json_retry($ua, $url);
-    last if !$j;  # stop requests this run on repeated failure / hourly-limit message
+        result = fetch_owm(session, lat, lon)
+        if result is None:
+            # Rate-limited or repeated failure — stop now but still write output
+            break
 
-    my @resp = ref($j) eq 'ARRAY' ? @$j : ($j);
-    if (@resp != @lat_list) {
-        warn "WARN: unexpected response length (got ".scalar(@resp)." expected ".scalar(@lat_list)."); stopping this run\n";
-        last;
-    }
+        key = f"{lat},{lon}"
+        cache[key] = result
+        write_json_atomic(CACHE_JSON, cache)
 
-    for my $k (0 .. $#resp) {
-        my $one = $resp[$k];
-        my $c = $one->{current} || {};
+        idx = (idx + 1) % total
+        write_json_atomic(STATE_JSON, {"idx": idx})
 
-        my $lat = $lat_list[$k];
-        my $lon = $lon_list[$k];
-        my $key = "$lat,$lon";
+        fetched += 1
+        if fetched < REQS_PER_RUN:
+            time.sleep(SLEEP_BETWEEN)
 
-        my $r = {
-            temp => $c->{temperature_2m},
-            hum  => $c->{relative_humidity_2m},
-            mps  => $c->{wind_speed_10m},
-            dir  => $c->{wind_direction_10m},
-            prs  => $c->{surface_pressure},
-            wx   => wx_from_code($c->{weather_code}),
-            tz   => 0,
-            ts   => time(),
-        };
+    print(f"INFO: fetched {fetched} point(s) this run. Writing wx.txt …", file=sys.stderr)
 
-        $cache->{$key} = $r;
-    }
+    # Always rewrite the full output file from cache
+    write_wx_txt(OUT_TXT, cache)
 
-    # Persist cache after each successful request
-    write_json_atomic($CACHE_JSON, $cache);
+    print(f"INFO: wx.txt written → {OUT_TXT}", file=sys.stderr)
 
-    # Advance cursor (wrap)
-    $state->{idx} = $end + 1;
-    $state->{idx} = 0 if $state->{idx} >= $TOTAL;
-    write_json_atomic($STATE_JSON, $state);
 
-    sleep($SLEEP_BETWEEN_REQS) if $SLEEP_BETWEEN_REQS;
-}
-
-# Always (re)write wx.txt from cache so clients see a complete file
-my $tmp_out = "$OUT_TXT.$$";
-open my $out, '>', $tmp_out or die "ERROR: cannot write $tmp_out: $!\n";
-print {$out} "#   lat     lng  temp,C     %hum    mps     dir    mmHg    Wx           TZ\n";
-
-for my $lon (@LONS) {
-    for my $lat (@LATS) {
-        my $key = "$lat,$lon";
-        my $r = $cache->{$key} // { temp=>0, hum=>0, mps=>0, dir=>0, prs=>0, wx=>'Unknown', tz=>0 };
-        print {$out} fmt_line($lat, $lon, $r);
-    }
-    print {$out} "\n";
-}
-
-close $out;
-move $tmp_out, $OUT_TXT or die "ERROR: move $tmp_out -> $OUT_TXT failed: $!\n";
-
-exit 0;
-
+if __name__ == "__main__":
+    main()
