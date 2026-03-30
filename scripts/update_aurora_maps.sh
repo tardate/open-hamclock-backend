@@ -70,9 +70,9 @@ with open("ovation.xyz", "w") as f:
 EOF
 
 echo "Gridding aurora..."
-gmt nearneighbor "$XYZ" -R-180/180/-90/90 -I0.25 -S3 -Lx -Gaurora_raw.nc
+gmt nearneighbor "$XYZ" -R-180/180/-90/90 -I0.25 -S8 -Lx -Gaurora_raw.nc
 gmt grdclip aurora_raw.nc -Sb0/NaN -Gaurora_preclip.nc
-gmt grdfilter aurora_preclip.nc -Fg9 -D0 -Gaurora.nc
+gmt grdfilter aurora_preclip.nc -Fg12 -D0 -Gaurora.nc
 gmt grdclip aurora.nc -Sb2/NaN -Gaurora_clipped.nc
 
 # ---------------------------------------------------------------------------
