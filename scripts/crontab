@@ -60,6 +60,8 @@ LANG=C
 
 */30 * * * *   $VENV/bin/python3 $BASE/scripts/web15rss_fetch.py >> $BASE/logs/web15rss_fetch.log 2>&1
 
+*/2 * * * *    OWM_REQS_PER_RUN=50 $VENV/bin/python3 $BASE/scripts/update_world_wx.py >>/opt/hamclock-backend/logs/update_world_wx.log 2>&1
+
 5 */8 * * *    $BASE/scripts/gen_contest-calendar.sh    >> /opt/hamclock-backend/logs/gen_contest-calendar.log 2>&1
 
 # Runs AMSAT Active Satellite Filter and builds TLEs
@@ -88,6 +90,3 @@ LANG=C
 35 * * * *             /opt/hamclock-backend/scripts/update_drap_maps.sh    >> /opt/hamclock-backend/logs/update_drap_maps.log   2>&1
 5 1,5,9,13,17,21 * * * /opt/hamclock-backend/scripts/update_aurora_maps.sh  >> /opt/hamclock-backend/logs/update_aurora_maps.log 2>&1
 0 0,12 * * *           /opt/hamclock-backend/scripts/update_wx_mb_maps.sh   >> /opt/hamclock-backend/logs/update_wx_mb_maps.log  2>&1
-
-# CSI period was 19 1-23/2 - Frequency increased to allow scripts to pull smaller chunks of data every 2 min to avoid rate limits
-*/2 * * * * /opt/hamclock-backend/update_world_wx.py >>/opt/hamclock-backend/logs/update_world_wx.log 2>&1
