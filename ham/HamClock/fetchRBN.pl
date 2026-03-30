@@ -6,194 +6,120 @@ use CGI qw(param header);
 use LWP::UserAgent;
 use URI;
 use JSON::PP qw(decode_json);
+use File::Spec;
 
 # ---------------- Config ----------------
-my $RBN_BASE        = 'https://www.reversebeacon.net/spots.php';
-my $H_VERSION       = '2aa296';
-my $DEFAULT_MAXAGE  = 7200;
-my $DEFAULT_S       = 0;
-my $DEFAULT_R       = 100;
-my $TIMEOUT_SEC     = 15;
-# ----------------------------------------
+my $RBN_BASE    = 'https://www.reversebeacon.net/spots.php';
+my $CACHE_DIR   = '/opt/hamclock-backend/cache';
+my $CACHE_FILE  = File::Spec->catfile($CACHE_DIR, 'rbn_h_version.txt');
+my $TIMEOUT_SEC = 15;
 
-binmode STDOUT, ':encoding(ISO-8859-1)';
-
-sub csv_error {
-    my ($status, $msg) = @_;
-    print header(-type => 'text/plain; charset=ISO-8859-1', -status => $status);
-    print "ERROR: $msg\n";
-    exit 0;
+# Ensure cache directory exists (if possible)
+if (!-d $CACHE_DIR) {
+    mkdir $CACHE_DIR or die "Cannot create cache dir: $!" if !-e $CACHE_DIR;
 }
 
-# Maidenhead (6-char) from lat/lon (decimal degrees)
-sub latlon_to_maiden6 {
-    my ($lat, $lon) = @_;
-    return '' if !defined($lat) || !defined($lon);
+# ---------------- Logic ----------------
 
-    # Validate numeric
-    return '' if $lat !~ /^-?\d+(\.\d+)?$/ || $lon !~ /^-?\d+(\.\d+)?$/;
+# 1. Get current hash (from cache or default)
+my $current_h = get_cached_h(); // '';
 
-    # Shift to positive ranges
-    my $A = $lon + 180.0;
-    my $B = $lat +  90.0;
+# 2. Extract CGI params
+my $ofcall = uc(param('ofcall') // '');
+my $maxage = int(param('maxage') // 3600);
 
-    return '' if $A < 0 || $A >= 360 || $B < 0 || $B > 180;
-
-    my $field_lon = int($A / 20);
-    my $field_lat = int($B / 10);
-
-    my $rem_lon = $A - ($field_lon * 20);
-    my $rem_lat = $B - ($field_lat * 10);
-
-    my $square_lon = int($rem_lon / 2);
-    my $square_lat = int($rem_lat / 1);
-
-    $rem_lon = $rem_lon - ($square_lon * 2);
-    $rem_lat = $rem_lat - ($square_lat * 1);
-
-    # subsquare is 5 minutes lon (1/24 of 2 degrees) and 2.5 minutes lat (1/24 of 1 degree)
-    my $sub_lon = int($rem_lon / (2.0 / 24.0));
-    my $sub_lat = int($rem_lat / (1.0 / 24.0));
-
-    my $Achr = chr(ord('A') + $field_lon);
-    my $Bchr = chr(ord('A') + $field_lat);
-    my $Cchr = $square_lon;
-    my $Dchr = $square_lat;
-    my $Echr = chr(ord('A') + $sub_lon);
-    my $Fchr = chr(ord('A') + $sub_lat);
-
-    return uc("$Achr$Bchr$Cchr$Dchr$Echr$Fchr");
+if (!$ofcall) {
+    print header(-type => 'text/plain', -status => 400);
+    print "ERROR: Missing ofcall\n";
+    exit;
 }
 
-# Mode heuristic: FT8/FT4 common dial freqs, else CW
-sub guess_mode_from_hz {
-    my ($hz) = @_;
-    return 'CW' if !defined($hz) || $hz !~ /^\d+$/;
+# 3. Attempt the fetch
+my $ua = LWP::UserAgent->new(timeout => $TIMEOUT_SEC, agent => 'HamClock-Relay/1.2');
+my $json_data = fetch_rbn($ofcall, $maxage, $current_h);
 
-    # Common FT8 dial freqs (Hz). (tolerance allows slight offsets)
-    my @ft8 = (
-        1840000, 3573000, 5357000, 7074000, 10136000, 14074000,
-        18100000, 21074000, 24915000, 28074000, 50313000, 144174000
-    );
+# 4. Handle Hash Rotation (400 error with new ver_h)
+if ($json_data->{error} && $json_data->{ver_h}) {
+    $current_h = $json_data->{ver_h};
+    save_cached_h($current_h);
+    # Retry once with the new hash
+    $json_data = fetch_rbn($ofcall, $maxage, $current_h);
+}
 
-    # Common FT4 dial freqs (Hz)
-    my @ft4 = (
-        3568000, 7047000, 10140000, 14080000, 18104000, 21140000, 28180000
-    );
+# 5. Final Output
+if ($json_data->{spots}) {
+    print header(-type => 'text/plain; charset=ISO-8859-1');
+    process_and_print($json_data);
+} else {
+    print header(-type => 'text/plain', -status => 502);
+    print "ERROR: RBN Request Failed after retry.\n";
+}
 
-    my $tol = 2500; # Hz tolerance
+# ---------------- Subroutines ----------------
 
-    for my $f (@ft8) {
-        return 'FT8' if abs($hz - $f) <= $tol;
+sub fetch_rbn {
+    my ($call, $ma, $h) = @_;
+    my $uri = URI->new($RBN_BASE);
+    $uri->query_form(h => $h, ma => $ma, cdx => $call, s => 0, r => 100);
+    
+    my $res = $ua->get($uri);
+    return {} unless $res->content; # Return empty if no content
+    
+    return eval { decode_json($res->decoded_content) } // {};
+}
+
+sub process_and_print {
+    my $data = shift;
+    my $spots = $data->{spots};
+    my $info  = $data->{call_info} // {};
+
+    for my $id (sort { $a <=> $b } keys %$spots) {
+        my $s = $spots->{$id};
+        my $de_call = $s->[0];
+        my $hz = int(($s->[1] // 0) * 1000);
+        
+        my $de_grid = "";
+        if ($info->{$de_call}) {
+            $de_grid = latlon_to_maiden6($info->{$de_call}->[6], $info->{$de_call}->[7]);
+        }
+        
+        # Format: epoch, ofgrid, ofcall, degrid, decall, mode, hz, snr
+        printf("%d,,%s,%s,%s,%s,%d,%d\n", 
+               $s->[-1], $s->[2], $de_grid, $de_call, guess_mode($hz), $hz, $s->[3]);
     }
-    for my $f (@ft4) {
-        return 'FT4' if abs($hz - $f) <= $tol;
-    }
+}
+
+# --- Cache Helpers ---
+sub get_cached_h {
+    return undef unless -f $CACHE_FILE;
+    open my $fh, '<', $CACHE_FILE or return undef;
+    my $h = <$fh>;
+    close $fh;
+    $h =~ s/\s+//g;
+    return $h;
+}
+
+sub save_cached_h {
+    my $h = shift;
+    open my $fh, '>', $CACHE_FILE or warn "Could not write cache: $!";
+    print $fh $h;
+    close $fh;
+}
+
+# --- Standard Radio Helpers ---
+sub guess_mode {
+    my $f = shift;
+    return 'FT8' if $f =~ /^(1840|3573|7074|10136|14074|18100|21074|24915|28074)000/;
+    return 'FT4' if $f =~ /^(3568|7047|10140|14080|18104|21140|28180)000/;
     return 'CW';
 }
 
-# --------- Parse CGI inputs ----------
-my @selectors = grep { defined param($_) && length(param($_)) } qw(ofcall bycall ofgrid bygrid);
-csv_error(400, "Missing required parameter: one of ofcall, bycall, ofgrid, bygrid") if @selectors == 0;
-csv_error(400, "Provide only ONE of: ofcall, bycall, ofgrid, bygrid")                if @selectors > 1;
-
-my $sel_name  = $selectors[0];
-my $sel_value = param($sel_name);
-
-my $maxage = param('maxage');
-$maxage = $DEFAULT_MAXAGE if !defined($maxage) || $maxage eq '';
-csv_error(400, "maxage must be integer seconds") if $maxage !~ /^\d+$/;
-$maxage = int($maxage);
-
-# Build query params to RBN
-my %q = (
-    h  => $H_VERSION,
-    ma => $maxage,
-    s  => $DEFAULT_S,
-    r  => $DEFAULT_R,
-);
-
-# Callsign mapping you specified:
-# cdx = spotted/DX station, cde = spotter/DE station
-if ($sel_name eq 'ofcall' || $sel_name eq 'bycall') {
-    csv_error(400, "Invalid callsign format") if $sel_value !~ /^[A-Za-z0-9\/\-]+$/;
-    my $call = uc($sel_value);
-
-    if ($sel_name eq 'ofcall') {  # spotted station
-        $q{cdx} = $call;
-        $q{cde} = '';
-    } else {                      # spotter station
-        $q{cde} = $call;
-        $q{cdx} = '';
-    }
-}
-elsif ($sel_name eq 'ofgrid' || $sel_name eq 'bygrid') {
-    # RBN grid params are not confirmed; leaving as an explicit error so you don't get silent wrong results.
-    csv_error(400, "Grid filtering not implemented yet: need confirmed RBN parameter names for grid (e.g., gdx/gde or similar).");
-}
-else {
-    csv_error(400, "Unexpected selector parameter");
-}
-
-my $uri = URI->new($RBN_BASE);
-$uri->query_form(%q);
-
-# --------- Fetch JSON ----------
-my $ua = LWP::UserAgent->new(timeout => $TIMEOUT_SEC, agent => 'fetchRBN.pl/1.1');
-my $resp = $ua->get($uri);
-
-csv_error(502, "Upstream error: " . $resp->status_line) if !$resp->is_success;
-
-my $raw = $resp->decoded_content(charset => 'none');
-my $data;
-eval { $data = decode_json($raw); 1 } or csv_error(502, "Upstream returned non-JSON (or JSON parse failed)");
-
-my $spots     = $data->{spots}     || {};
-my $call_info = $data->{call_info} || {};
-
-# Output CSV
-print header(-type => 'text/plain; charset=ISO-8859-1', -status => 200);
-
-# spots is a hash keyed by spot id; each value is an array.
-# Observed structure includes:
-#   [0]=decall (spotter), [1]=freq_khz, [2]=ofcall (spotted), [3]=snr, ... [last]=epoch
-for my $id (sort { $a <=> $b } keys %$spots) {
-    my $a = $spots->{$id};
-    next if ref($a) ne 'ARRAY';
-
-    my $decall = $a->[0] // '';
-    my $freq_khz = $a->[1] // '';
-    my $ofcall = $a->[2] // '';
-    my $snr    = $a->[3];
-    my $epoch  = $a->[-1];
-
-    # Convert kHz -> Hz integer
-    my $hz = '';
-    if (defined $freq_khz && $freq_khz =~ /^-?\d+(\.\d+)?$/) {
-        $hz = int($freq_khz * 1000);
-    }
-
-    my $mode = guess_mode_from_hz($hz);
-
-    # Compute grids from call_info lat/lon (if present)
-    my $ofgrid = '    ';
-    if ($ofcall && exists $call_info->{$ofcall} && ref($call_info->{$ofcall}) eq 'ARRAY') {
-        my $lat = $call_info->{$ofcall}->[6];
-        my $lon = $call_info->{$ofcall}->[7];
-        #$ofgrid = latlon_to_maiden6($lat, $lon);
-    }
-
-    my $degrid = '';
-    if ($decall && exists $call_info->{$decall} && ref($call_info->{$decall}) eq 'ARRAY') {
-        my $lat = $call_info->{$decall}->[6];
-        my $lon = $call_info->{$decall}->[7];
-        $degrid = latlon_to_maiden6($lat, $lon);
-    }
-
-    # Final CSV line:
-    # epoch_time,ofgrid,ofcall,degrid,decall,mode,hz,snr
-    $epoch  = '' if !defined($epoch);
-    $snr    = '' if !defined($snr);
-
-    print join(',', $epoch, $ofgrid, $ofcall, $degrid, $decall, $mode, $hz, $snr) . "\n";
+sub latlon_to_maiden6 {
+    my ($lat, $lon) = @_;
+    return "" if !defined $lat || !defined $lon;
+    my $ln = $lon + 180; my $lt = $lat + 90;
+    my $f1 = chr(ord('A') + int($ln/20)); my $f2 = chr(ord('A') + int($lt/10));
+    my $s1 = int(($ln%20)/2); my $s2 = int(($lt%10)/1);
+    my $u1 = chr(ord('A') + int((($ln%20)%2)*12)); my $u2 = chr(ord('A') + int((($lt%10)%1)*24));
+    return "$f1$f2$s1$s2$u1$u2";
 }
