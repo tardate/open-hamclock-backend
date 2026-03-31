@@ -6,8 +6,11 @@ use CGI;
 my $q = CGI->new;
 my $cache_dir = "/opt/hamclock-backend/cache";
 
-print "Remote_Addr: $ENV{REMOTE_ADDR}\n";
-print $q->header('text/plain');
+print "HTTP/1.0 200 Ok\r\n";
+print "Connection: close\r\n";
+print "Remote_Addr: $ENV{REMOTE_ADDR}\r\n";
+print "Content-Type: text/plain; charset=ISO-8859-1\r\n";
+print "\r\n";
 
 # 1. Parse User-Agent (e.g., HamClock/4.22b01)
 my $ua_string = $q->user_agent() || "";
