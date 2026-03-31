@@ -105,6 +105,7 @@ RUN cd /opt/hamclock-backend && \
     /usr/sbin/lighttpd-enable-mod hamclock && \
     /usr/sbin/lighttpd-enable-mod ohb-dashboard && \
     /usr/sbin/lighttpd-enable-mod hc-firmware && \
+    /usr/sbin/lighttpd-enable-mod sdo-movies && \
     /usr/sbin/lighttpd-enable-mod ssl && \
     # \
     # ImageMagick policy parameters need to be increased \
