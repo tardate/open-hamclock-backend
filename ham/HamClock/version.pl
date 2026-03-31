@@ -6,17 +6,9 @@ use CGI;
 my $q = CGI->new;
 my $cache_dir = "/opt/hamclock-backend/cache";
 
-print "Remote_Addr: $ENV{REMOTE_ADDR}\n";
-print $q->header('text/plain');
-
 # 1. Parse User-Agent (e.g., HamClock/4.22b01)
 my $ua_string = $q->user_agent() || "";
 my ($client_ver) = $ua_string =~ m|HamClock-.*?/([\d\.b]+)|i;
-
-unless ($client_ver) {
-    print "Unknown\n";
-    exit;
-}
 
 # 2. Get the current Stable version number
 my $stable_ver_num = "";
@@ -31,7 +23,7 @@ if (-f $stable_path) {
 # 3. Determine Offer Type
 my $offer_type = "stable";
 
-if ($client_ver =~ /b/i) {
+if ($client_ver && $client_ver =~ /b/i) {
     # Extract numeric base: "4.22b01" -> "4.22"
     my ($base_ver) = $client_ver =~ /^([\d\.]+)/;
 
