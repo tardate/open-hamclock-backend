@@ -16,11 +16,6 @@ print "\r\n";
 my $ua_string = $q->user_agent() || "";
 my ($client_ver) = $ua_string =~ m|HamClock-.*?/([\d\.b]+)|i;
 
-unless ($client_ver) {
-    print "Unknown\n";
-    exit;
-}
-
 # 2. Get the current Stable version number
 my $stable_ver_num = "";
 my $stable_path = "$cache_dir/HC_RELEASE-stable.txt";
@@ -34,7 +29,7 @@ if (-f $stable_path) {
 # 3. Determine Offer Type
 my $offer_type = "stable";
 
-if ($client_ver =~ /b/i) {
+if ($client_ver && $client_ver =~ /b/i) {
     # Extract numeric base: "4.22b01" -> "4.22"
     my ($base_ver) = $client_ver =~ /^([\d\.]+)/;
 
