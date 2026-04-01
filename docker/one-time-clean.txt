@@ -1,16 +1,8 @@
-/ham/HamClock/drap/ignore
-/ham/HamClock/cty/ignore
-/ham/HamClock/dst/ignore
-/ham/HamClock/dxpeds/ignore
-/ham/HamClock/worldwx/ignore
-/ham/HamClock/contests/ignore
-/ham/HamClock/ONTA/ignore
-/ham/HamClock/geomag/ignore
-/ham/HamClock/aurora/ignore
-/ham/HamClock/xray/ignore
-/ham/HamClock/Bz/ignore
-/ham/HamClock/SDO/ignore
-/ham/HamClock/solar-wind/ignore
+# list of files to be deleted upon start. comments at the beginning of a 
+# line and blank lines ignored. file gets used once per image based 
+# on the /opt/hamclock-backend/git.version value. Be sure to reset 
+# this file for each release.
+
 /ham/HamClock/drap/last_valid_date.txt
 /ham/HamClock/drap/stats.txt
 /ham/HamClock/version-new.pl
