@@ -70,6 +70,8 @@ COPY --exclude=**/__pycache__/ --exclude=**/__init__.py --from=build-support /us
 COPY --exclude=docker/ohb-maps.tar.zst . /opt/hamclock-backend/
 RUN cd /opt/hamclock-backend && \
     mv  docker/run.sh /opt && \
+    mv  docker/one-time-clean.sh /opt && \
+    mv  docker/one-time-clean.txt /opt && \
     # \
     # cron is tightly coupled to the type of python install. cron is written for pyenv. however \
     # when there is no pip or pyenv, python runs from /usr. \
@@ -81,7 +83,13 @@ RUN cd /opt/hamclock-backend && \
     # \
     # set permissions \
     chown -R www-data:www-data . && \
-    chmod +x ham/HamClock/*.pl scripts/* prime_crontabs.sh /opt/run.sh /opt/hamclock-backend/lighttpd-conf/env-gen.sh && \
+    chmod +x ham/HamClock/*.pl \
+             scripts/* \
+             prime_crontabs.sh \
+             /opt/run.sh \
+             /opt/one-time-clean.sh \
+             /opt/hamclock-backend/lighttpd-conf/env-gen.sh \
+             && \
     # \
     # fontconfig needs a writeable cache directory \
     mkdir -p /var/www/.fontconfig && \
