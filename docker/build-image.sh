@@ -11,7 +11,7 @@ TAG=$(git describe --exact-match --tags 2>/dev/null)
 if [ $? -ne 0 ]; then
     echo "NOTE: Not currently on a tag. Using 'latest'."
     TAG=latest
-    GIT_VERSION=$(git rev-parse --short HEAD)
+    GIT_VERSION=$(git rev-parse HEAD)
 else
     GIT_VERSION=$TAG
 fi
