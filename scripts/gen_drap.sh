@@ -15,6 +15,8 @@ RAW_DATA=$(curl -s "$URL")
 # Example line: # Product Valid At : 2026-02-03 23:01 UTC
 CURRENT_VALID_DATE=$(echo "$RAW_DATA" | grep "Product Valid At" | cut -d':' -f2- | xargs)
 
+echo "INFO: Product Valid At $CURRENT_VALID_DATE"
+
 # 3. Check if we've already processed this timestamp
 if [ -f "$LAST_DATE_FILE" ]; then
     LAST_VALID_DATE=$(cat "$LAST_DATE_FILE")
@@ -23,7 +25,9 @@ if [ -f "$LAST_DATE_FILE" ]; then
         # time and last known values to keep HamClock's staleness check happy.
         # This prevents HC from showing DRAP invalid during a NOAA outage.
         # We only do this if the output file already exists with real data.
+        echo "WARN: NOAA DRAP data frozen!"
         if [ -e "$OUTPUT" ]; then
+            echo "WARN: Appending last known good row..." 
             LAST_ROW=$(tail -n 1 "$OUTPUT")
             LAST_VALS=$(echo "$LAST_ROW" | cut -d' ' -f2-)
             NOW=$(date +%s)
@@ -78,10 +82,12 @@ echo "$CURRENT_VALID_DATE" > "$LAST_DATE_FILE"
 # backwards every 5 minutes from now using the first real values we have.
 # This gives HC a plausible-looking history until real data fills in.
 if [ -e "$OUTPUT" ]; then
-    # Keep last 440 lines and append the new real row
-    tail -n 440 "$OUTPUT" > "$TMPFILE"
+    echo "INFO: DRAP stats.txt already exists... appending new row to file."
+    # Keep last 439 lines and append the new real row
+    tail -n 439 "$OUTPUT" > "$TMPFILE"
     echo "$NEW_ROW" >> "$TMPFILE"
 else
+    echo "INFO: DRAP stats.txt does not exist... seeding with 440 backdated rows at 5 min intervals."
     # File doesn't exist yet - seed with 440 backdated rows at 5 min intervals
     EPOCH_TIME=$(echo $NEW_ROW | cut -d " " -f 1)
     ROW_TAIL=$(echo $NEW_ROW | cut -d " " -f 2-)
