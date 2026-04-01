@@ -33,8 +33,18 @@ def fetch_kp() -> list[dict]:
             r = requests.get(KP_URL, headers=HEADERS, timeout=TIMEOUT)
             r.raise_for_status()
             rows = r.json()
-            keys = rows[0]
-            return [dict(zip(keys, row)) for row in rows[1:]]
+
+            # SWPC has served two formats over time:
+            #   array-of-arrays: [["time_tag","kp",...], ["2026-...", 3.0, ...], ...]
+            #   array-of-objects: [{"time_tag":"2026-...","kp":3.0,...}, ...]
+            if isinstance(rows[0], dict):
+                # Already array-of-objects — use directly
+                return rows
+            else:
+                # Array-of-arrays — first row is the header
+                keys = rows[0]
+                return [dict(zip(keys, row)) for row in rows[1:]]
+
         except Exception as e:
             if attempt == 2:
                 raise
