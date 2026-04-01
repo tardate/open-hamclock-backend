@@ -19,7 +19,20 @@ CURRENT_VALID_DATE=$(echo "$RAW_DATA" | grep "Product Valid At" | cut -d':' -f2-
 if [ -f "$LAST_DATE_FILE" ]; then
     LAST_VALID_DATE=$(cat "$LAST_DATE_FILE")
     if [ "$CURRENT_VALID_DATE" == "$LAST_VALID_DATE" ]; then
-        # Quietly exit if data hasn't changed
+        # NOAA feed is frozen - append a heartbeat row with current wall clock
+        # time and last known values to keep HamClock's staleness check happy.
+        # This prevents HC from showing DRAP invalid during a NOAA outage.
+        # We only do this if the output file already exists with real data.
+        if [ -e "$OUTPUT" ]; then
+            LAST_ROW=$(tail -n 1 "$OUTPUT")
+            LAST_VALS=$(echo "$LAST_ROW" | cut -d' ' -f2-)
+            NOW=$(date +%s)
+            HEARTBEAT_ROW="$NOW $LAST_VALS"
+            tail -n 439 "$OUTPUT" > "$TMPFILE"
+            echo "$HEARTBEAT_ROW" >> "$TMPFILE"
+            cp "$TMPFILE" "$OUTPUT"
+        fi
+        rm -f "$TMPFILE"
         exit 0
     fi
 fi
@@ -61,18 +74,15 @@ echo "$CURRENT_VALID_DATE" > "$LAST_DATE_FILE"
 
 # 6. Save and trim the log
 #
-# if this is a fresh install, we won't have the history. It seems like
-# hamclock doesn't like old timestamps so we can't keep a seed file in git.
-# Instead what we'll do is take the last value and save it 440 times to mimic 
-# what we see in CSI. It will be just a straight line but eventually it will fill in.
+# If this is a fresh install we won't have the history. Bootstrap by walking
+# backwards every 5 minutes from now using the first real values we have.
+# This gives HC a plausible-looking history until real data fills in.
 if [ -e "$OUTPUT" ]; then
-    # last checked, CSI had 440 lines. Not sure how we maintains the file since the timestamps
-    # are not uniformly spaced.
+    # Keep last 440 lines and append the new real row
     tail -n 440 "$OUTPUT" > "$TMPFILE"
     echo "$NEW_ROW" >> "$TMPFILE"
 else
-    # if the file doesn't exist, go backwards every 5 minutes which is a rough
-    # approximation of what we see in real data
+    # File doesn't exist yet - seed with 440 backdated rows at 5 min intervals
     EPOCH_TIME=$(echo $NEW_ROW | cut -d " " -f 1)
     ROW_TAIL=$(echo $NEW_ROW | cut -d " " -f 2-)
     for i in {0..439}; do
