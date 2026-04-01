@@ -7,6 +7,12 @@ echo "Preparing for pskr ..."
 mkdir -p /opt/hamclock-backend/htdocs/pskr
 chown $PSKR_UID /opt/hamclock-backend/htdocs/pskr
 
+# migrating to a new home
+mkdir -p /opt/hamclock-backend/htdocs/state
+if [ -e /opt/hamclock-backend/htdocs/prime_crontabs.done ]; then
+    mv /opt/hamclock-backend/htdocs/prime_crontabs.done /opt/hamclock-backend/htdocs/state
+fi
+
 echo "Syncing the initial, static directory structure ..."
 mkdir -p /opt/hamclock-backend/htdocs/ham
 cp -a /opt/hamclock-backend/ham/HamClock /opt/hamclock-backend/htdocs/ham
@@ -16,7 +22,7 @@ if [ "$ENABLE_DASHBOARD" == true ]; then
     rm -f /opt/hamclock-backend/htdocs/credits-only-index.html 
 else
     echo Removing dashboard and only installing credits ...
-    find /opt/hamclock-backend/htdocs -maxdepth 1 -type f ! -name prime_crontabs.done -exec rm -f "{}" +
+    find /opt/hamclock-backend/htdocs -maxdepth 1 -type f -exec rm -f "{}" +
     cp /opt/hamclock-backend/ham/dashboard/favicon.ico /opt/hamclock-backend/htdocs
     cp /opt/hamclock-backend/ham/dashboard/robots.txt /opt/hamclock-backend/htdocs
     cp /opt/hamclock-backend/ham/dashboard/credits.html /opt/hamclock-backend/htdocs
@@ -27,19 +33,22 @@ fi
 echo "Starting lighttpd ..."
 /usr/sbin/lighttpd -f /etc/lighttpd/lighttpd.conf
 
-# only needs to be primed when container is instantiated
-if [ ! -e /opt/hamclock-backend/htdocs/prime_crontabs.done ]; then
+# only needs to be primed when docker volume container is instantiated
+if [ ! -e /opt/hamclock-backend/htdocs/state/prime_crontabs.done ]; then
     echo "Running OHB for the first time."
 
     echo "Priming the data set ..."
     /usr/sbin/runuser -u www-data /opt/hamclock-backend/prime_crontabs.sh
 
-    touch /opt/hamclock-backend/htdocs/prime_crontabs.done
+    touch /opt/hamclock-backend/htdocs/state/prime_crontabs.done
     echo "Done! OHB data has been primed."
 
     LAST_TIME_EPOCH=$(date -u +%s)
 else
     echo "OHB was previously installed and does not need to be primed."
+
+    echo "Running the one-time-clean script"
+    /opt/one-time-clean.sh
 
     LAST_TIME_EPOCH=$(find /opt/hamclock-backend/htdocs -type f -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d. -f1)
     echo "Last running timestamp found is: '$(date -ud @$LAST_TIME_EPOCH)'"
