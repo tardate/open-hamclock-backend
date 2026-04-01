@@ -13,9 +13,9 @@
 
 THIS=$(basename $0)
 HERE="$(realpath -s "$(dirname "$0")" 2>/dev/null)"
-DVC_MOUNT=/opt/hamclock-backend/htdocs/state
+DVC_MOUNT=/opt/hamclock-backend/htdocs
 STOCK_FILES_LIST=$HERE/${THIS%.*}.txt
-FILES_LIST=$DVC_MOUNT/${THIS%.*}.txt
+FILES_LIST=$DVC_MOUNT/state/${THIS%.*}.txt
 GIT_VERSION_FILE=/opt/hamclock-backend/git.version
 
 # Only do something if the file exists in this image
@@ -31,9 +31,9 @@ fi
 # we have a files list and it wasn't already run from this image
 cp "$STOCK_FILES_LIST" "$FILES_LIST"
 
-while IFS= read -r line; do
-    echo "$THIS: Deleting: $DVC_MOUNT/$line"
-	rm -f "$DVC_MOUNT/$line"
+while IFS= read -r file; do
+    echo "$THIS: Deleting: $DVC_MOUNT/$file"
+	rm -f "$DVC_MOUNT/$file"
 done < <(grep -vE '^(\s*#|\s*$)' "$FILES_LIST" | tr -d '\r')
 
 # mark the file as from this image and having been run already.
