@@ -62,7 +62,7 @@ foreach my $item (
 
     # Determine current display version (stripped)
     my $display_version = $clean_ver;
-    $display_version =~ s/^(\d+\.\d+)\.\d+/$1/;
+    $display_version =~ s/^(\d+\.[\db]+)\..*/$1/i;
 
     # --- Change Detection Logic ---
     if (-f $txt_file) {
@@ -100,16 +100,17 @@ foreach my $item (
     }
 
     # 2. Write the .tag file
-    open(my $tfh, '>', $tag_file) or die "Could not write $tag_file: $!";
+    open(my $tfh, '>', $tag_file) or next;
     print $tfh $orig_ver . "\n";
     close($tfh);
     chmod 0644, $tag_file;
 
-    # 3. Fetch HC_RELEASE.txt content and write .txt file
-    my $raw_url = "https://raw.githubusercontent.com/$owner/$repo/$orig_ver/HC_RELEASE.txt";
+    # 3. Fetch HC_RELEASE-*.txt content and write .txt file
+    my $github_txt = "HC_RELEASE-" . $item->{type} . ".txt";
+    my $raw_url = "https://raw.githubusercontent.com/$owner/$repo/$orig_ver/$github_txt";
     my $resp = $ua->get($raw_url);
 
-    open(my $fh, '>', $txt_file) or die "Could not write $txt_file: $!";
+    open(my $fh, '>', $txt_file) or next;
 
     # Line 1: Stripped Version
     print $fh $display_version . "\n";
