@@ -1,9 +1,46 @@
 #!/usr/bin/env python3
+# ============================================================
+#
+#   ██████╗ ██╗  ██╗██████╗
+#  ██╔═══██╗██║  ██║██╔══██╗
+#  ██║   ██║███████║██████╔╝
+#  ██║   ██║██╔══██║██╔══██╗
+#  ╚██████╔╝██║  ██║██████╔╝
+#   ╚═════╝ ╚═╝  ╚═╝╚═════╝
+#
+#  Open HamClock Backend
+#  bz_simple.py
+#
+#  MIT License
+#  Copyright (C) 2026 Open HamClock Backend (OHB) Contributors
+#
+#  Permission is hereby granted, free of charge, to any person
+#  obtaining a copy of this software and associated documentation
+#  files (the "Software"), to deal in the Software without
+#  restriction, including without limitation the rights to use,
+#  copy, modify, merge, publish, distribute, sublicense, and/or
+#  sell copies of the Software, and to permit persons to whom the
+#  Software is furnished to do so, subject to the following
+#  conditions:
+#
+#  The above copyright notice and this permission notice shall be
+#  included in all copies or substantial portions of the Software.
+#
+#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+#  OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+#  HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+#  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+#  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+#  OTHER DEALINGS IN THE SOFTWARE.
+#
+# ============================================================
 """
-Build swind-24hr.txt (epoch density speed) from NOAA SWPC plasma-1-day.json.
+Build swind-24hr.txt (epoch density speed) from NOAA SWPC rtsw_wind_1m.json.
 
-Upstream:
-  https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json
+Upstream (new):
+  https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json
 
 Output (one row per sample):
   <unix_epoch> <density> <speed>
@@ -11,10 +48,18 @@ Output (one row per sample):
 Target path:
   /opt/hamclock-backend/htdocs/ham/HamClock/solar-wind/swind-24hr.txt
 
-Windowing policy (CSI-like, but ending at newest available sample):
-- Sort + de-dup by epoch
-- Optional lag (disabled by default)
-- Keep the last 1440 samples (24h @ ~1-min cadence)
+Data notes:
+  - The new feed is an array of objects (not a header-row + data-rows list).
+  - Each timestamp appears twice: once for DSCOVR and once for ACE.
+    Only the record with "active": true is the authoritative source.
+  - Field names changed: density -> proton_density, speed -> proton_speed.
+  - Records arrive newest-first; we sort ascending before windowing.
+  - Some active records have null density/speed; these are skipped.
+
+Windowing policy (unchanged from v1):
+  - Filter to active records only, skip nulls, sort + de-dup by epoch
+  - Optional lag (disabled by default)
+  - Keep the last 1440 samples (24h @ ~1-min cadence)
 """
 
 from __future__ import annotations
@@ -25,20 +70,21 @@ import sys
 import tempfile
 import urllib.request
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Tuple
+from typing import List, Tuple
 
-URL = "https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json"
+URL = "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json"
 OUT = "/opt/hamclock-backend/htdocs/ham/HamClock/solar-wind/swind-24hr.txt"
 
 # 24h at ~1-minute cadence
 KEEP_N = 1440
 
-# Set to 0 to end at newest available SWPC sample (recommended).
-# If you later confirm CSI lags on purpose, set e.g. 60*60 or 90*60.
+# Set to 0 to end at newest available sample (recommended).
+# If you need to match a CSI lag, set e.g. 60*60 or 90*60.
 LAG_SECONDS = 0
 
 
 def iso_to_epoch(s: str) -> int:
+    """Parse an ISO-8601 time_tag string to a UTC Unix epoch integer."""
     s = s.strip().replace("T", " ")
     if s.endswith("Z"):
         s = s[:-1].strip()
@@ -53,41 +99,52 @@ def iso_to_epoch(s: str) -> int:
     raise ValueError(f"Unrecognized time_tag format: {s!r}")
 
 
-def fetch_json(url: str, timeout: int = 20) -> Any:
-    req = urllib.request.Request(url, headers={"User-Agent": "OHB-swind/1.2"})
+def fetch_json(url: str, timeout: int = 20):
+    req = urllib.request.Request(url, headers={"User-Agent": "OHB-swind/2.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8", errors="replace"))
 
 
-def parse_plasma(rows: Any) -> List[Tuple[int, float, float]]:
-    if not isinstance(rows, list) or len(rows) < 2:
-        raise ValueError("Unexpected JSON shape (expected list with header + data rows)")
+def parse_wind(records) -> List[Tuple[int, float, float]]:
+    """
+    Parse rtsw_wind_1m records into (epoch, density, speed) tuples.
 
-    header = rows[0]
-    if not isinstance(header, list):
-        raise ValueError("Unexpected header row shape")
+    Filters to active records only and skips any with null proton_density
+    or proton_speed values.
+    """
+    if not isinstance(records, list) or len(records) == 0:
+        raise ValueError("Unexpected JSON shape (expected non-empty array of objects)")
 
-    idx: Dict[str, int] = {}
-    for i, name in enumerate(header):
-        if isinstance(name, str):
-            idx[name.strip().lower()] = i
-
-    for needed in ("time_tag", "density", "speed"):
-        if needed not in idx:
-            raise ValueError(f"Missing required column {needed!r} in header: {header!r}")
+    # Validate that this looks like the right feed
+    first = records[0]
+    if not isinstance(first, dict):
+        raise ValueError(
+            "Expected array of objects; got array of arrays. "
+            "Wrong endpoint? (old plasma-1-day format)"
+        )
+    for needed in ("time_tag", "active", "proton_density", "proton_speed"):
+        if needed not in first:
+            raise ValueError(f"Missing expected field {needed!r} in record: {list(first.keys())}")
 
     out: List[Tuple[int, float, float]] = []
-    for r in rows[1:]:
-        if not isinstance(r, list):
+
+    for rec in records:
+        # Only use the authoritative source for each timestamp
+        if not rec.get("active"):
             continue
+
+        # Skip records with missing plasma data
+        if rec["proton_density"] is None or rec["proton_speed"] is None:
+            continue
+
         try:
-            t = iso_to_epoch(str(r[idx["time_tag"]]))
-            dens = float(r[idx["density"]])
-            spd = float(r[idx["speed"]])
+            t = iso_to_epoch(str(rec["time_tag"]))
+            dens = float(rec["proton_density"])
+            spd = float(rec["proton_speed"])
         except Exception:
             continue
 
-        # generous sanity bounds
+        # Sanity bounds (same as v1)
         if t <= 0:
             continue
         if not (0.0 <= dens <= 500.0):
@@ -98,11 +155,12 @@ def parse_plasma(rows: Any) -> List[Tuple[int, float, float]]:
         out.append((t, dens, spd))
 
     if not out:
-        raise ValueError("No valid samples parsed from upstream JSON")
+        raise ValueError("No valid active samples parsed from upstream JSON")
 
+    # Sort ascending by epoch (feed arrives newest-first)
     out.sort(key=lambda x: x[0])
 
-    # De-dup strictly by increasing epoch
+    # De-dup: keep only strictly increasing timestamps
     dedup: List[Tuple[int, float, float]] = []
     last_t = None
     for t, d, v in out:
@@ -146,8 +204,8 @@ def atomic_write(path: str, lines: List[str]) -> None:
 
 def main() -> int:
     try:
-        rows = fetch_json(URL)
-        samples = parse_plasma(rows)
+        records = fetch_json(URL)
+        samples = parse_wind(records)
         samples = apply_window(samples)
 
         if not samples:
@@ -164,4 +222,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
