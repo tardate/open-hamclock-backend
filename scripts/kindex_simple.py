@@ -1,4 +1,4 @@
-#!/opt/hamclock-backend/venv/bin/python3
+#!/usr/bin/env python3
 # kindex_simple.py
 #
 # Build HamClock geomag/kindex.txt (72 lines) from a single SWPC JSON feed:
