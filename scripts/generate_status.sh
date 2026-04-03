@@ -30,7 +30,6 @@ DATA_SUBDIRS=(
     solar-flux
     solar-wind
     ssn
-    voacap
     worldwx
     xray
 )
