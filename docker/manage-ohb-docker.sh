@@ -447,6 +447,8 @@ docker_compose_up() {
         echo "OHB is already running."
         RETVAL=1
     else
+        export DOCKER_CLIENT_TIMEOUT=120
+        export COMPOSE_HTTP_TIMEOUT=120
         docker_compose_yml && docker compose -f <(echo "$DOCKER_COMPOSE_YML") create
         RETVAL=$?
         [ $RETVAL -ne 0 ] && return $RETVAL
