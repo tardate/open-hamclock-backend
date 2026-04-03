@@ -57,9 +57,10 @@ with open("ovation.xyz", "w") as f:
     for lon, lat, val in d["coordinates"]:
         if val <= 0:
             continue
-        # OVATION has a spurious artifact row at exactly lat=0.
-        # Exclude it — all other latitudes including sub-50 southern aurora are valid.
-        if lat == 0.0:
+        # Exclude OVATION's equatorial artifact band.
+        # lat=0 is the peak row; lat=-1,-2,-3 form a noise skirt
+        # that the Gaussian filter smears northward across the equator.
+        if -3.0 <= lat <= 3.0:
             continue
         if lon > 180.0:
             lon -= 360.0
@@ -73,7 +74,7 @@ echo "Gridding aurora..."
 gmt nearneighbor "$XYZ" -R-180/180/-90/90 -I0.25 -S8 -Lx -Gaurora_raw.nc
 gmt grdclip aurora_raw.nc -Sb0/NaN -Gaurora_preclip.nc
 gmt grdfilter aurora_preclip.nc -Fg12 -D0 -Gaurora.nc
-gmt grdclip aurora.nc -Sb2/NaN -Gaurora_clipped.nc
+gmt grdclip aurora.nc -Sb3/NaN -Gaurora_clipped.nc
 
 # ---------------------------------------------------------------------------
 # CPT: CSI colorbar exact colors, fully opaque at every value.
