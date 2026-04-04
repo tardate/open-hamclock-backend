@@ -24,6 +24,7 @@ else
     echo Removing dashboard and only installing credits ...
     find /opt/hamclock-backend/htdocs -maxdepth 1 -type f -exec rm -f "{}" +
     cp /opt/hamclock-backend/ham/dashboard/favicon.ico /opt/hamclock-backend/htdocs
+    cp /opt/hamclock-backend/ham/dashboard/favicon.svg /opt/hamclock-backend/htdocs
     cp /opt/hamclock-backend/ham/dashboard/robots.txt /opt/hamclock-backend/htdocs
     cp /opt/hamclock-backend/ham/dashboard/credits-only-index.html /opt/hamclock-backend/htdocs/index.html
 fi
