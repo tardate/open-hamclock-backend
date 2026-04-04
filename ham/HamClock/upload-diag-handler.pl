@@ -43,7 +43,9 @@ my $filename = basename((split(/\?/, $request_uri))[0]);
 
 # Validation: ensure it looks like a HamClock log
 if (!$filename || $filename !~ /^dl-.*\.txt$/) {
-    print "Status: 400 Bad Request\n\nInvalid Filename";
+    print "Status: 404 Not Found\n";
+    print "Content-Type: text/html\n\n";
+    print "<html><head><title>404 Not Found</title></head><body><h1>404 Not Found</h1></body></html>";
     exit;
 }
 
