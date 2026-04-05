@@ -6,6 +6,3 @@
 #
 # example: /ham/HamClock/delete-this-file
 
-/ham/HamClock/version-new.pl
-/ham/HamClock/csi.txt
-/ham/HamClock/us.txt
