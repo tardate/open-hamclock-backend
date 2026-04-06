@@ -1,10 +1,51 @@
 #!/usr/bin/env python3
+# ============================================================
+#
+#   ██████╗ ██╗  ██╗██████╗
+#  ██╔═══██╗██║  ██║██╔══██╗
+#  ██║   ██║███████║██████╔╝
+#  ██║   ██║██╔══██║██╔══██╗
+#  ╚██████╔╝██║  ██║██████╔╝
+#   ╚═════╝ ╚═╝  ╚═╝╚═════╝
+#
+#  Open HamClock Backend
+#  bz_simple.py
+#
+#  MIT License
+#  Copyright (C) 2026 Open HamClock Backend (OHB) Contributors
+#
+#  Permission is hereby granted, free of charge, to any person
+#  obtaining a copy of this software and associated documentation
+#  files (the "Software"), to deal in the Software without
+#  restriction, including without limitation the rights to use,
+#  copy, modify, merge, publish, distribute, sublicense, and/or
+#  sell copies of the Software, and to permit persons to whom the
+#  Software is furnished to do so, subject to the following
+#  conditions:
+#
+#  The above copyright notice and this permission notice shall be
+#  included in all copies or substantial portions of the Software.
+#
+#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+#  OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+#  HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+#  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+#  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+#  OTHER DEALINGS IN THE SOFTWARE.
+#
+# ============================================================
 """
-gen_dxpeditions.py  –  Fetch, merge and write HamClock dxpeditions.txt
+gen_dxpeditions_spots.py  –  Generate HamClock dxpeditions.txt
 
-Sources:
-  NG3K ADXO  – authoritative for dates, callsigns, entity names, and some URLs
-  DXNews.com – contributes expedition-specific URLs matched by callsign
+Model:
+  - NG3K adxoplain HTML is the authoritative source of expedition records.
+  - DXNews is used to provide better article URLs via sitemap-only slug matching.
+  - A small curated override map is used for a few known custom URLs.
+  - A very small hand-curated DXNews fallback list is allowed only when those
+    calls are absent from NG3K; for those, the script fetches the matched DXNews
+    page and tries to parse real dates.
 """
 
 import re
@@ -13,7 +54,7 @@ import time
 import hashlib
 import logging
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
@@ -23,6 +64,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from lxml import html as lxml_html
 
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -30,17 +72,14 @@ from lxml import html as lxml_html
 OUT_FILE  = Path('/opt/hamclock-backend/htdocs/ham/HamClock/dxpeds/dxpeditions.txt')
 LOCK_FILE = Path('/opt/hamclock-backend/tmp/gen_dxpeditions.lock')
 
-NG3K_URL   = 'https://www.ng3k.com/Misc/adxo.html'
-DXNEWS_IDX = 'https://dxnews.com/dxpeditions/'
+NG3K_URL        = 'https://www.ng3k.com/Misc/adxoplain.html'
+NG3K_URL_OUTPUT = 'http://www.ng3k.com/Misc/adxo.html'
+DXNEWS_SITEMAP_INDEX = 'https://dxnews.com/sitemap_index.xml'
 
-PAST_DAYS   = 1    # keep if ended up to N days ago
-FUTURE_DAYS = 180  # keep if starts within N days from now
+PAST_DAYS   = 1
+FUTURE_DAYS = 180
 
-# Max duration (days) for entries with no specific URL — filters resident stations
-MAX_GENERIC_DURATION = 60
-
-REQUEST_TIMEOUT = 20   # seconds per HTTP request
-DXNEWS_DELAY    = 0.5  # seconds between DXNews page fetches
+REQUEST_TIMEOUT = 20
 
 HEADERS = {
     'User-Agent': (
@@ -49,13 +88,29 @@ HEADERS = {
     )
 }
 
-# DXNews site-navigation slugs that are never expedition pages
 DXNEWS_SKIP_SLUGS = {
     'dxpeditions', 'category', 'tag', 'author', 'page', 'contact', 'about',
     'announcements', 'articles', 'calendar', 'contesting', 'dxnews', 'forum',
     'funded', 'iota', 'popular', 'ru', 'sendarticle', 'sitemap',
     'support-dxnews', 'supporters', 'dxinformation', 'search',
 }
+
+CUSTOM_URL_OVERRIDES = {
+    'JT0LR': 'https://tnxqso.com/rt9l#/info',
+    '3D2JK': 'https://3d2jk.blogspot.com/',
+    'VP9KF': 'https://vp9kf.com/',
+    'TX9W':  'https://k5we.com/tx9w/',
+}
+
+HAND_CURATED_DXNEWS_CALLS = {
+    '3B8XF',
+    'E51ANQ',
+    '5H3DX',
+    'C5B',
+    'LU1ZA',
+    'RI1ANT',
+}
+
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -67,6 +122,7 @@ logging.basicConfig(
     datefmt='%H:%M:%S',
 )
 log = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # HTTP session with retries
@@ -86,76 +142,166 @@ def make_session() -> requests.Session:
     session.headers.update(HEADERS)
     return session
 
+
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
 
 @dataclass
 class Expedition:
-    start: int   # Unix timestamp, 00:00:00 UTC
-    end:   int   # Unix timestamp, 23:59:59 UTC
+    start: int
+    end:   int
     loc:   str
     call:  str
     url:   str
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
 
-MONTH_ABBR = {
-    'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'may': 4,  'jun': 5,
-    'jul': 6, 'aug': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dec': 11,
+MONTHS = {
+    'jan': 1, 'january': 1,
+    'feb': 2, 'february': 2,
+    'mar': 3, 'march': 3,
+    'apr': 4, 'april': 4,
+    'may': 5,
+    'jun': 6, 'june': 6,
+    'jul': 7, 'july': 7,
+    'aug': 8, 'august': 8,
+    'sep': 9, 'september': 9,
+    'oct': 10, 'october': 10,
+    'nov': 11, 'november': 11,
+    'dec': 12, 'december': 12,
 }
 
+MONTH_NAMES_FULL = {
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+}
+
+MONTH_ABBR_RE = r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
+MONTH_PAT = (
+    r'January|February|March|April|May|June|July|August|September|October|November|December|'
+    r'Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec'
+)
+
+
 def to_epoch_start(y: int, m: int, d: int) -> int:
-    return int(datetime(y, m + 1, d,  0,  0,  0, tzinfo=timezone.utc).timestamp())
+    return int(datetime(y, m, d, 0, 0, 0, tzinfo=timezone.utc).timestamp())
+
 
 def to_epoch_end(y: int, m: int, d: int) -> int:
-    return int(datetime(y, m + 1, d, 23, 59, 59, tzinfo=timezone.utc).timestamp())
+    return int(datetime(y, m, d, 23, 59, 59, tzinfo=timezone.utc).timestamp())
+
 
 def in_window(start: int, end: int, now: int) -> bool:
-    return (end   >= now - PAST_DAYS   * 86400 and
+    return (end >= now - PAST_DAYS * 86400 and
             start <= now + FUTURE_DAYS * 86400)
 
-def _url_quality(url: str) -> int:
-    """Higher = better. Expedition-specific > DXNews article > NG3K generic."""
-    if re.search(r'ng3k\.com/Misc/adxo', url, re.I):
-        return 0
-    if re.search(r'dxnews\.com/', url, re.I):
-        return 1
-    return 2
+
+def normalize_space(s: str) -> str:
+    return re.sub(r'\s+', ' ', s).strip()
+
+
+def normalize_call(call: str) -> str:
+    call = normalize_space(call).upper()
+    call = re.sub(r'\s*NEW\s*\([^)]*\)', '', call, flags=re.I).strip()
+    m = re.match(r'^([A-Z0-9/]+)', call)
+    return m.group(1) if m else call
+
 
 def _extract_call(text: str) -> Optional[str]:
-    """
-    Extract the best callsign-like token from text.
-    Handles real calls (DU6, KH2, HC1MD/2, 6Y, 3B8G) and
-    pure-alpha entity prefixes (FG, FM, ZC4).
-    """
     call_m = (
         re.search(r'\b([A-Z]{0,3}[0-9][A-Z0-9]*(?:/[A-Z0-9P]+)?)\b', text) or
         re.search(r'\b([A-Z]{2,4})\b', text)
     )
     if not call_m or len(call_m.group(1)) < 2:
         return None
-    return call_m.group(1)
+    return re.sub(r'[^A-Z0-9/]+$', '', call_m.group(1)) or None
+
+
+def call_variants(call: str) -> set[str]:
+    call = normalize_call(call)
+    out = {call}
+
+    if '/' in call:
+        left, right = call.split('/', 1)
+        out.add(left)
+        out.add(right)
+        out.add(call.replace('/', '-'))
+        out.add(call.replace('/', ''))
+        out.add(left + right)
+
+    return {x.lower() for x in out if x}
+
+
+def slugify_url(url: str) -> str:
+    return url.rstrip('/').split('/')[-1].lower()
+
+
+def _url_quality(url: str) -> int:
+    if re.search(r'ng3k\.com/Misc/adxo', url, re.I):
+        return 0
+    if re.search(r'dxnews\.com/', url, re.I):
+        return 1
+    return 2
+
 
 # ---------------------------------------------------------------------------
-# NG3K scraper  (authoritative source)
+# NG3K parser (authoritative)
 # ---------------------------------------------------------------------------
 
-def parse_ng3k_date(s: str) -> Optional[tuple[int, int, int]]:
-    """Parse '2026 Feb21' → (2026, 1, 21)  [month 0-based]"""
-    s = re.sub(r'NEW\s*\([^)]*\)', '', s, flags=re.I).strip()
-    m = re.match(r'^(\d{4})\s+([A-Za-z]{3})(\d{1,2})$', s)
-    if not m:
-        return None
-    yr  = int(m.group(1))
-    mon = m.group(2).lower()[:3]
-    day = int(m.group(3))
-    return (yr, MONTH_ABBR[mon], day) if mon in MONTH_ABBR else None
+def parse_ng3k_date_range(line: str) -> Optional[tuple[int, int]]:
+    """
+    Known formats:
+      Apr 11-25, 2026
+      Apr 11-May 1, 2026
+      Apr 8-8, 2026
+    """
+    s = normalize_space(line)
+
+    # Apr 11-May 1, 2026
+    m = re.fullmatch(
+        rf'{MONTH_ABBR_RE}\s+(\d{{1,2}})-{MONTH_ABBR_RE}\s+(\d{{1,2}}),\s*(\d{{4}})',
+        s
+    )
+    if m:
+        m1, d1, m2, d2, y = m.groups()
+        return (
+            to_epoch_start(int(y), MONTHS[m1.lower()], int(d1)),
+            to_epoch_end(int(y), MONTHS[m2.lower()], int(d2)),
+        )
+
+    # Apr 11-25, 2026
+    m = re.fullmatch(
+        rf'{MONTH_ABBR_RE}\s+(\d{{1,2}})-(\d{{1,2}}),\s*(\d{{4}})',
+        s
+    )
+    if m:
+        mon, d1, d2, y = m.groups()
+        return (
+            to_epoch_start(int(y), MONTHS[mon.lower()], int(d1)),
+            to_epoch_end(int(y), MONTHS[mon.lower()], int(d2)),
+        )
+
+    return None
+
+
+def paragraph_lines_with_br(p) -> list[str]:
+    """
+    Convert a <p> into logical text lines, preserving <br> boundaries.
+    """
+    html = lxml_html.tostring(p, encoding='unicode', method='html')
+    html = re.sub(r'<br\s*/?>', '\n', html, flags=re.I)
+    wrapper = lxml_html.fromstring(f'<div>{html}</div>')
+    text = wrapper.text_content()
+    lines = [normalize_space(x) for x in text.split('\n')]
+    return [x for x in lines if x]
+
 
 def scrape_ng3k(session: requests.Session, now: int) -> list[Expedition]:
-    log.info('Fetching NG3K: %s', NG3K_URL)
+    log.info('Fetching NG3K plain HTML: %s', NG3K_URL)
     try:
         resp = session.get(NG3K_URL, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
@@ -163,224 +309,355 @@ def scrape_ng3k(session: requests.Session, now: int) -> list[Expedition]:
         log.error('NG3K fetch failed: %s', exc)
         return []
 
-    tree    = lxml_html.fromstring(resp.content)
+    tree = lxml_html.fromstring(resp.content)
+    p_nodes = tree.xpath('//p')
+
     records: list[Expedition] = []
     skipped = 0
 
-    for tr in tree.xpath('//tr'):
-        tds = tr.xpath('td')
-        if len(tds) < 7:
+    for p in p_nodes:
+        strong_texts = [normalize_space(t) for t in p.xpath('.//strong/text()') if normalize_space(t)]
+        lines = paragraph_lines_with_br(p)
+        if not lines:
             continue
 
-        def cell_text(td):
-            raw = td.text_content()
-            raw = re.sub(r'NEW\s*\([^)]*\)', '', raw, flags=re.I)
-            raw = re.sub(r'\[\[.*?\]\]', '', raw)
-            return re.sub(r'\s+', ' ', raw).strip()
+        raw_text = normalize_space(' '.join(lines))
 
-        # ---- Dates ----
-        sd = parse_ng3k_date(cell_text(tds[0]))
-        ed = parse_ng3k_date(cell_text(tds[1]))
-        if not sd or not ed:
+        # Year header
+        if len(strong_texts) == 1 and re.fullmatch(r'\d{4}', strong_texts[0]):
+            continue
+
+        # Month header
+        if len(strong_texts) == 1 and strong_texts[0] in MONTH_NAMES_FULL:
+            continue
+
+        # Non-entry paragraphs
+        if raw_text.startswith('Currently active callsigns are in bold face'):
+            continue
+        if raw_text.startswith('RSGB IOTA Contest'):
+            continue
+
+        rng = parse_ng3k_date_range(lines[0])
+        if not rng:
+            continue
+
+        start_ts, end_ts = rng
+
+        fields = {}
+        for ln in lines[1:]:
+            m = re.match(r'^(DXCC|Callsign|QSL|Source|Info):\s*(.*)$', ln)
+            if m:
+                key, val = m.groups()
+                val = re.sub(r'\s*NEW\s*\([^)]*\)', '', val, flags=re.I).strip()
+                fields[key] = normalize_space(val)
+
+        loc = fields.get('DXCC', '')
+        call = normalize_call(fields.get('Callsign', ''))
+
+        if not loc or not call:
             skipped += 1
+            log.debug('NG3K skip entry missing loc/call: %r', raw_text[:200])
             continue
-
-        start_ts = to_epoch_start(*sd)
-        end_ts   = to_epoch_end(*ed)
 
         if not in_window(start_ts, end_ts, now):
             continue
 
-        # ---- Location ----
-        loc = cell_text(tds[2]).replace('&amp;', '&').replace(' & ', ' and ').strip()
-        if not loc:
-            skipped += 1
-            continue
-
-        # ---- Callsign + URL ----
-        call_td  = tds[3]
-        call_url = NG3K_URL
-
-        for a in call_td.xpath('.//a'):
-            href = (a.get('href') or '').strip()
-            if href and not re.search(r'dxwatch|dxsd1|ng3k\.com', href, re.I):
-                if href.startswith('/'):
-                    href = 'https://www.ng3k.com' + href
-                call_url = href
-                break
-
-        call_text    = cell_text(call_td)
-        real_call_m  = re.search(r'\b([A-Z]{0,3}[0-9][A-Z0-9]*(?:/[A-Z0-9P]+)?)\b', call_text)
-        alpha_call_m = re.search(r'\b([A-Z]{2,4})\b', call_text)
-        call_m       = real_call_m or alpha_call_m
-
-        if not call_m or len(call_m.group(1)) < 2:
-            skipped += 1
-            continue
-        call = call_m.group(1)
-
-        is_bare_alpha  = bool(alpha_call_m and not real_call_m)
-        is_generic_url = (call_url == NG3K_URL)
-        duration_days  = (end_ts - start_ts) / 86400
-
-        # Pure-alpha entity codes (FG, FM, FS, etc.) with no specific URL are
-        # collected but we only keep the shortest-duration entry per call (the
-        # dedicated expedition vs long-running holiday op). Collect all here;
-        # filtering happens after the loop.
-
-        # Long-duration real-call entries with no specific URL are resident/club
-        # stations (e.g. JD1 Minami Torishima resident), not expeditions — drop.
-        if not is_bare_alpha and is_generic_url and duration_days > MAX_GENERIC_DURATION:
-            log.debug('NG3K skip %s — %.0fd, no specific URL', call, duration_days)
-            continue
-
         records.append(Expedition(
-            start=start_ts, end=end_ts, loc=loc, call=call, url=call_url,
+            start=start_ts,
+            end=end_ts,
+            loc=loc,
+            call=call,
+            url=NG3K_URL_OUTPUT,
         ))
-
-    # For bare-alpha calls with no specific URL, keep only the shortest-duration
-    # entry (the dedicated expedition), drop long holiday-op / "entity active" entries.
-    alpha_generic = {
-        r.call for r in records
-        if r.url == NG3K_URL
-        and not re.search(r'[0-9]', r.call)  # is bare-alpha
-    }
-    for call in alpha_generic:
-        same = [r for r in records if r.call == call and r.url == NG3K_URL]
-        if len(same) > 1:
-            # Keep the shortest duration only
-            shortest = min(same, key=lambda r: r.end - r.start)
-            for r in same:
-                if r is not shortest:
-                    log.debug('NG3K drop long bare-alpha %s (%.0fd)', call,
-                              (r.end - r.start) / 86400)
-                    records.remove(r)
 
     log.info('NG3K: %d records parsed, %d skipped', len(records), skipped)
     return records
 
+
 # ---------------------------------------------------------------------------
-# DXNews URL lookup  (contributes better URLs matched by callsign)
+# DXNews sitemap-only URL matcher
 # ---------------------------------------------------------------------------
 
 def fetch_dxnews_url_map(session: requests.Session) -> dict[str, str]:
-    """
-    Scrape DXNews expedition pages and return {CALLSIGN: url}.
-    DXNews dates are unreliable (prose-format, sometimes absent) so we only
-    use DXNews to find better expedition-specific URLs, not for dates.
-    """
-    log.info('Fetching DXNews index: %s', DXNEWS_IDX)
     try:
-        resp = session.get(DXNEWS_IDX, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
+        log.info('Fetching DXNews sitemap index: %s', DXNEWS_SITEMAP_INDEX)
+        r = session.get(DXNEWS_SITEMAP_INDEX, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
     except requests.RequestException as exc:
-        log.error('DXNews index fetch failed: %s', exc)
+        log.error('DXNews sitemap index fetch failed: %s', exc)
         return {}
 
-    urls = sorted(set(re.findall(
-        r'https://dxnews\.com/[a-z0-9_\-]+/', resp.text, re.I,
-    )))
-    urls = [u for u in urls
-            if u.rstrip('/').split('/')[-1] not in DXNEWS_SKIP_SLUGS]
+    sub_sitemaps = re.findall(r'https://dxnews\.com/sitemap\d+\.xml', r.text)
+    if not sub_sitemaps:
+        log.warning('DXNews sitemap index returned no sub-sitemaps')
+        return {}
 
-    log.info('DXNews: %d candidate URLs', len(urls))
+    latest = sorted(sub_sitemaps, key=lambda u: int(re.search(r'(\d+)', u).group(1)))[-1]
+
+    try:
+        log.info('Fetching DXNews sitemap: %s', latest)
+        r2 = session.get(latest, timeout=REQUEST_TIMEOUT)
+        r2.raise_for_status()
+    except requests.RequestException as exc:
+        log.error('DXNews sitemap fetch failed: %s', exc)
+        return {}
+
+    cutoff = datetime.now(timezone.utc).date() - timedelta(days=FUTURE_DAYS)
+    entries = re.findall(
+        r'<loc>(https://dxnews\.com/[a-z0-9_\-]+/)</loc>\s*<lastmod>(\d{4}-\d{2}-\d{2})</lastmod>',
+        r2.text
+    )
+
     url_map: dict[str, str] = {}
-    skipped = 0
+    kept = 0
 
-    for url in urls:
-        time.sleep(DXNEWS_DELAY)
+    for url, d in entries:
+        if d < str(cutoff):
+            continue
+
+        slug = slugify_url(url)
+        if slug in DXNEWS_SKIP_SLUGS:
+            continue
+
+        kept += 1
+        url_map[slug] = url
+
+    log.info('DXNews sitemap-only URL index: %d slugs retained', kept)
+    return url_map
+
+
+def match_dxnews_url(call: str, slug_map: dict[str, str]) -> Optional[str]:
+    variants = call_variants(call)
+
+    for v in variants:
+        if v in slug_map:
+            return slug_map[v]
+
+    for slug, url in slug_map.items():
+        for v in variants:
+            if re.search(rf'(^|[-_]){re.escape(v)}($|[-_])', slug):
+                return url
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Curated DXNews fallback for a tiny allowlist only
+# ---------------------------------------------------------------------------
+
+def _dxnews_structured_event_window(page_text: str) -> tuple[Optional[int], Optional[int]]:
+    m_start = re.search(r'"startDate"\s*:\s*"(\d{4})-(\d{2})-(\d{2})T', page_text)
+    m_end   = re.search(r'"endDate"\s*:\s*"(\d{4})-(\d{2})-(\d{2})T', page_text)
+    if not (m_start and m_end):
+        return None, None
+
+    sy, sm, sd = map(int, m_start.groups())
+    ey, em, ed = map(int, m_end.groups())
+    try:
+        start_ts = int(datetime(sy, sm, sd, 0, 0, 0, tzinfo=timezone.utc).timestamp())
+        end_ts   = int(datetime(ey, em, ed, 23, 59, 59, tzinfo=timezone.utc).timestamp())
+        if end_ts < start_ts:
+            return None, None
+        return start_ts, end_ts
+    except ValueError:
+        return None, None
+
+
+def _parse_dxnews_range_from_body(body_text: str) -> tuple[Optional[int], Optional[int]]:
+    patterns = [
+        # April 6-9, 2026
+        rf'({MONTH_PAT})\s+(\d{{1,2}})\s*(?:-|–|to)\s*(\d{{1,2}}),?\s*(20\d\d)',
+        # 6-9 April 2026
+        rf'(\d{{1,2}})\s*(?:-|–|to)\s*(\d{{1,2}})\s+({MONTH_PAT})\s*(20\d\d)',
+        # March 30 - April 2, 2026
+        rf'({MONTH_PAT})\s+(\d{{1,2}})\s*[-–]\s*({MONTH_PAT})\s+(\d{{1,2}}),?\s*(20\d\d)',
+        # 30 March - 2 April 2026
+        rf'(\d{{1,2}})\s+({MONTH_PAT})\s*[-–]\s*(\d{{1,2}})\s+({MONTH_PAT})\s+(20\d\d)',
+        # during September 2026 / in April 2026
+        rf'(?:during|in)\s+({MONTH_PAT})\s+(20\d\d)',
+        # starting 25 March 2026
+        rf'\bstarting\s+(\d{{1,2}})\s+({MONTH_PAT})\s+(20\d\d)\b',
+        rf'\bfrom\s+(\d{{1,2}})\s+({MONTH_PAT})\s+(20\d\d)\b',
+        rf'\bstarting\s+({MONTH_PAT})\s+(\d{{1,2}}),?\s+(20\d\d)\b',
+        rf'\bfrom\s+({MONTH_PAT})\s+(\d{{1,2}}),?\s+(20\d\d)\b',
+    ]
+
+    import calendar
+
+    for pat in patterns:
+        m = re.search(pat, body_text, re.I)
+        if not m:
+            continue
+        g = m.groups()
+        try:
+            if len(g) == 4:
+                if g[0].lower() in MONTHS:
+                    mon = MONTHS[g[0].lower()]
+                    d1, d2, yr = int(g[1]), int(g[2]), int(g[3])
+                    return (
+                        to_epoch_start(yr, mon, d1),
+                        to_epoch_end(yr, mon, d2),
+                    )
+                else:
+                    d1, d2, mon, yr = int(g[0]), int(g[1]), MONTHS[g[2].lower()], int(g[3])
+                    return (
+                        to_epoch_start(yr, mon, d1),
+                        to_epoch_end(yr, mon, d2),
+                    )
+
+            if len(g) == 5:
+                if g[0].lower() in MONTHS:
+                    mon1, d1, mon2, d2, yr = MONTHS[g[0].lower()], int(g[1]), MONTHS[g[2].lower()], int(g[3]), int(g[4])
+                else:
+                    d1, mon1, d2, mon2, yr = int(g[0]), MONTHS[g[1].lower()], int(g[2]), MONTHS[g[3].lower()], int(g[4])
+                return (
+                    to_epoch_start(yr, mon1, d1),
+                    to_epoch_end(yr, mon2, d2),
+                )
+
+            if len(g) == 2:
+                mon, yr = MONTHS[g[0].lower()], int(g[1])
+                last_day = calendar.monthrange(yr, mon)[1]
+                return (
+                    to_epoch_start(yr, mon, 1),
+                    to_epoch_end(yr, mon, last_day),
+                )
+
+            if len(g) == 3:
+                if g[0].lower() in MONTHS:
+                    mon, day, yr = MONTHS[g[0].lower()], int(g[1]), int(g[2])
+                else:
+                    day, mon, yr = int(g[0]), MONTHS[g[1].lower()], int(g[2])
+
+                start_ts = to_epoch_start(yr, mon, day)
+                end_ts = start_ts + 30 * 86400
+                return start_ts, end_ts
+
+        except ValueError:
+            continue
+
+    return None, None
+
+
+def fetch_curated_dxnews_fallbacks(
+    session: requests.Session,
+    now: int,
+    ng3k_calls: set[str],
+    dxnews_slug_map: dict[str, str],
+) -> list[Expedition]:
+    """
+    Only for a small allowlist of calls absent from NG3K.
+    Fetch the matched DXNews page and try to parse real dates.
+    """
+    out: list[Expedition] = []
+
+    for call in sorted(HAND_CURATED_DXNEWS_CALLS):
+        if call in ng3k_calls:
+            continue
+
+        url = match_dxnews_url(call, dxnews_slug_map)
+        if not url:
+            log.debug('Curated DXNews fallback: no sitemap match for %s', call)
+            continue
+
         try:
             r = session.get(url, timeout=REQUEST_TIMEOUT)
-            if not r.ok:
-                skipped += 1
-                continue
-        except requests.RequestException:
-            skipped += 1
+            r.raise_for_status()
+        except requests.RequestException as exc:
+            log.debug('Curated DXNews fallback fetch failed for %s: %s', call, exc)
             continue
 
         tree = lxml_html.fromstring(r.content)
-        h1s  = tree.xpath('//h1')
-        if not h1s:
-            skipped += 1
+        page_text = normalize_space(tree.text_content())
+
+        start_ts, end_ts = _dxnews_structured_event_window(page_text)
+        if not (start_ts and end_ts):
+            body_nodes = (
+                tree.xpath('//article') or
+                tree.xpath('//main') or
+                tree.xpath('//*[contains(@class,"post-content") or contains(@class,"entry-content") or contains(@class,"article-content")]')
+            )
+            body_text = normalize_space(body_nodes[0].text_content()) if body_nodes else page_text
+            start_ts, end_ts = _parse_dxnews_range_from_body(body_text)
+
+        if not (start_ts and end_ts):
+            log.debug('Curated DXNews fallback: no dates parsed for %s (%s)', call, url)
             continue
 
-        h1_text = re.sub(r'\s+', ' ', h1s[0].text_content()).strip()
-        call    = _extract_call(h1_text)
-
-        if not call or call in ('RSGB', 'ARRL', 'IOTA', 'DX', 'HOME'):
-            log.debug('DXNews skip %s — bad call from H1: %r', url, h1_text)
-            skipped += 1
+        if not in_window(start_ts, end_ts, now):
+            log.debug('Curated DXNews fallback: %s parsed but outside window', call)
             continue
 
-        url_map[call.upper()] = url
-        log.debug('DXNews mapped %s → %s', call, url)
+        loc = call
+        title_nodes = tree.xpath('//title')
+        if title_nodes:
+            title = normalize_space(title_nodes[0].text_content())
+            title = re.sub(r'\s*[-–|]\s*DXNews.*$', '', title, flags=re.I).strip()
+            title = re.sub(r'^\s*' + re.escape(call) + r'\s*[-–]?\s*', '', title, flags=re.I)
+            if title:
+                loc = title
 
-    log.info('DXNews: mapped %d calls, skipped %d pages', len(url_map), skipped)
-    return url_map
+        out.append(Expedition(
+            start=start_ts,
+            end=end_ts,
+            loc=loc,
+            call=call,
+            url=url,
+        ))
+        log.info('Curated DXNews fallback added %s from %s', call, url)
+
+    return out
+
 
 # ---------------------------------------------------------------------------
-# Merge
+# Merge / output
 # ---------------------------------------------------------------------------
 
-def merge(ng3k: list[Expedition], dxnews_urls: dict[str, str]) -> list[Expedition]:
-    """
-    Merge NG3K records with DXNews URL map.
-    - NG3K is authoritative for all fields.
-    - DXNews upgrades URLs when a better match exists for the callsign.
-    - Near-duplicates (same call, timestamps within 24h) are collapsed.
-    """
-    # Apply DXNews URL upgrades
+def merge(
+    ng3k: list[Expedition],
+    dxnews_slug_map: dict[str, str],
+    curated_fallbacks: Optional[list[Expedition]] = None,
+) -> list[Expedition]:
+    if curated_fallbacks is None:
+        curated_fallbacks = []
+
     for exp in ng3k:
-        dx_url = dxnews_urls.get(exp.call.upper())
+        override_url = CUSTOM_URL_OVERRIDES.get(exp.call.upper())
+        if override_url:
+            exp.url = override_url
+            continue
+
+        dx_url = match_dxnews_url(exp.call, dxnews_slug_map)
         if dx_url and _url_quality(dx_url) > _url_quality(exp.url):
             exp.url = dx_url
 
-    def best_url(a: str, b: str) -> str:
-        return b if _url_quality(b) > _url_quality(a) else a
+    merged = list(ng3k)
+    existing_calls = {e.call.upper() for e in merged}
 
-    merged: dict[tuple, Expedition] = {}
+    for exp in curated_fallbacks:
+        if exp.call.upper() not in existing_calls:
+            merged.append(exp)
+            existing_calls.add(exp.call.upper())
 
-    for exp in ng3k:
-        key = (exp.call, exp.start, exp.end)
+    log.info('Merged: %d expeditions', len(merged))
+    return merged
 
-        # Collapse near-duplicates: same call, timestamps within 24h
-        collapsed = False
-        for existing in merged.values():
-            if existing.call == exp.call:
-                if (abs(existing.start - exp.start) <= 86400 and
-                        abs(existing.end   - exp.end)   <= 86400):
-                    existing.url = best_url(existing.url, exp.url)
-                    collapsed = True
-                    break
-        if collapsed:
-            continue
-
-        if key not in merged:
-            merged[key] = exp
-        else:
-            merged[key].url = best_url(merged[key].url, exp.url)
-
-    result = sorted(merged.values(), key=lambda e: (e.start, e.call))
-    log.info('Merged: %d unique expeditions', len(result))
-    return result
-
-# ---------------------------------------------------------------------------
-# Output
-# ---------------------------------------------------------------------------
 
 HEADER = """\
 2
 DXNews
 https://dxnews.com
 NG3K
-https://www.ng3k.com/Misc/adxo.html
+http://www.ng3k.com/Misc/adxo.html
 """
+
 
 def build_output(records: list[Expedition]) -> str:
     lines = [HEADER.rstrip('\n')]
     for r in records:
         lines.append(f'{r.start},{r.end},{r.loc},{r.call},{r.url}')
     return '\n'.join(lines) + '\n'
+
 
 def write_if_changed(content: str, path: Path) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -395,8 +672,9 @@ def write_if_changed(content: str, path: Path) -> bool:
     log.info('Wrote %d bytes to %s', len(content), path)
     return True
 
+
 # ---------------------------------------------------------------------------
-# Lock file
+# Locking / main
 # ---------------------------------------------------------------------------
 
 def acquire_lock() -> bool:
@@ -409,20 +687,17 @@ def acquire_lock() -> bool:
     LOCK_FILE.write_text(str(time.time()))
     return True
 
+
 def release_lock():
     LOCK_FILE.unlink(missing_ok=True)
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description='Generate HamClock dxpeditions.txt')
-    parser.add_argument('--ng3k-only',   action='store_true', help='Skip DXNews (faster)')
-    parser.add_argument('--dxnews-only', action='store_true', help='Skip NG3K')
-    parser.add_argument('--out',  type=Path, default=OUT_FILE, help='Output path')
+    parser.add_argument('--ng3k-only', action='store_true', help='Skip DXNews URL enrichment and curated fallbacks')
+    parser.add_argument('--out', type=Path, default=OUT_FILE, help='Output path')
     parser.add_argument('--dry-run', action='store_true', help='Print, do not write')
-    parser.add_argument('--debug',   action='store_true')
+    parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
     if args.debug:
@@ -432,13 +707,22 @@ def main():
         sys.exit(1)
 
     try:
-        now     = int(time.time())
+        now = int(time.time())
         session = make_session()
 
-        ng3k_records = scrape_ng3k(session, now)     if not args.dxnews_only else []
-        dxnews_urls  = fetch_dxnews_url_map(session) if not args.ng3k_only   else {}
+        ng3k_records = scrape_ng3k(session, now)
+        dxnews_slug_map = {} if args.ng3k_only else fetch_dxnews_url_map(session)
 
-        records = merge(ng3k_records, dxnews_urls)
+        curated_fallbacks = []
+        if not args.ng3k_only:
+            curated_fallbacks = fetch_curated_dxnews_fallbacks(
+                session=session,
+                now=now,
+                ng3k_calls={e.call.upper() for e in ng3k_records},
+                dxnews_slug_map=dxnews_slug_map,
+            )
+
+        records = merge(ng3k_records, dxnews_slug_map, curated_fallbacks)
 
         if not records:
             log.error('No records — aborting to preserve existing file.')
@@ -453,6 +737,7 @@ def main():
 
     finally:
         release_lock()
+
 
 if __name__ == '__main__':
     main()
