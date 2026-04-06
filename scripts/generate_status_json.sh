@@ -1,25 +1,25 @@
 #!/bin/bash
-# generate_status.sh
-# Generates a static status board HTML for HamClock data products & maps.
-# Run via cron every 5 minutes, e.g.:
-#   */5 * * * * /opt/hamclock-backend/generate_status.sh
+# generate_status_json.sh
+# Generates a static status board HTML + JSON for HamClock data products & maps.
+# Run via cron every 5–15 minutes, e.g.:
+#   */5 * * * * /opt/hamclock-backend/generate_status_json.sh
 
 # ── Config ──────────────────────────────────────────────────────────────────
 DATA_DIR="/opt/hamclock-backend/htdocs/ham/HamClock"
 MAPS_DIR="/opt/hamclock-backend/htdocs/ham/HamClock/maps"
+SDO_DIR="/opt/hamclock-backend/htdocs/ham/HamClock/SDO"
 OUTPUT="/opt/hamclock-backend/htdocs/ham/HamClock/status.html"
 OUTPUT_JSON="${OUTPUT%.html}.json"
 CALLSIGN="OHB"          # your station callsign
 VERSION=$(cat /opt/hamclock-backend/git.version | cut -b -12)
 TZ_LABEL="UTC"          # display timezone label
 
-# Named data product subdirectories to enumerate (order preserved in output)
+# Named data product subdirectories to enumerate (order preserved in output).
+# RSS is intentionally omitted. SDO has its own dedicated section below.
 DATA_SUBDIRS=(
     Bz
     NOAASpaceWX
     ONTA
-    RSS
-    SDO
     aurora
     contests
     cty
@@ -36,11 +36,132 @@ DATA_SUBDIRS=(
 )
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── Per-category/file thresholds (seconds) ──────────────────────────────────
+# Derived from crontab cadences.  Each entry: "FRESH RECENT AGED"
+# Any age >= AGED threshold → STALE.
+#
+# Category        cron cadence   FRESH        RECENT       AGED
+# Bz              2 min          3 min        6 min        30 min
+# NOAASpaceWX     30 min         35 min       1 h          3 h
+# ONTA            2 min          3 min        6 min        30 min
+# aurora          ~15 min        20 min       45 min       3 h
+# contests        8 h            9 h          12 h         24 h
+# cty             daily          26 h         30 h         48 h
+# drap            5 min          6 min        15 min       1 h
+# dst             30 min         35 min       1 h          3 h
+# dxpeds          daily          26 h         30 h         48 h
+# esats           6 h (manual)   6 h 10 min   7 h          12 h
+# geomag          ~30 min        35 min       1 h          3 h
+# solar-flux      30 min         35 min       1 h          3 h
+# solar-wind      5 min          6 min        15 min       1 h
+# ssn             1 h            70 min       2 h          6 h
+# worldwx         2 min          3 min        6 min        30 min
+# xray            4 min          5 min        12 min       1 h
+# SDO             30 min         35 min       1 h          3 h
+# maps (default)  varies         65 min       3 h          12 h
+#
+# Static files: rank_coeffs.txt, rank2_coeffs.txt,
+#               solar-flux-history-1945-2025.txt,
+#               map-D-*-Countries (all size variants),
+#               Terrain* → always STATIC, no age badge
+
+get_thresholds() {
+    local category="$1"
+    local filename="$2"
+
+    # Files that never change — return sentinel
+    case "$filename" in
+        rank_coeffs.txt|rank2_coeffs.txt|solar-flux-history-1945-2025.txt)
+            echo "STATIC"
+            return
+            ;;
+        # map-[D|N]-*-Countries.* and map-[D|N]-*-Terrain* (any size/variant) are static
+        map-[DN]-*-Countries.*|map-[DN]-*-Terrain*|Terrain*)
+            echo "STATIC"
+            return
+            ;;
+    esac
+
+    # Per-category thresholds: echo "fresh_sec recent_sec aged_sec"
+    case "$category" in
+        Bz|ONTA|worldwx)       echo "180 360 1800"         ;;   # 3m 6m 30m
+        drap|solar-wind)       echo "360 900 3600"         ;;   # 6m 15m 1h
+        xray)                  echo "300 720 3600"         ;;   # 5m 12m 1h
+        aurora)                echo "1200 2700 10800"      ;;   # 20m 45m 3h
+        NOAASpaceWX|dst|geomag|solar-flux|SDO)
+                               echo "2100 3600 10800"      ;;   # 35m 1h 3h
+        ssn)                   echo "4200 7200 21600"      ;;   # 70m 2h 6h
+        esats)                 echo "22200 25200 43200"    ;;   # 6h10m 7h 12h
+        contests)              echo "32400 43200 86400"    ;;   # 9h 12h 24h
+        cty|dxpeds)            echo "93600 108000 172800"  ;;   # 26h 30h 48h
+        map)                   echo "3900 10800 43200"     ;;   # 65m 3h 12h
+        *)                     echo "300 1800 86400"       ;;   # default: 5m 30m 24h
+    esac
+}
+
+classify_age() {
+    local age_sec="$1"
+    local thresholds="$2"   # "fresh_sec recent_sec aged_sec" or "STATIC"
+
+    if [ "$thresholds" = "STATIC" ]; then
+        echo "static STATIC"
+        return
+    fi
+
+    read -r t_fresh t_recent t_aged <<< "$thresholds"
+
+    if   [ "$age_sec" -lt "$t_fresh"  ]; then echo "ok FRESH"
+    elif [ "$age_sec" -lt "$t_recent" ]; then echo "warn RECENT"
+    elif [ "$age_sec" -lt "$t_aged"   ]; then echo "aged AGED"
+    else                                       echo "stale STALE"
+    fi
+}
+# ─────────────────────────────────────────────────────────────────────────────
+
 NOW=$(date -u "+%Y-%m-%d %H:%M:%S")
 NOW_EPOCH=$(date -u +%s)
 
-# Emit HTML rows for every file in a given directory.
-# Args: $1=directory  $2=category-label
+# ── HTML row builder ─────────────────────────────────────────────────────────
+# Args: $1=filepath  $2=category-label
+emit_file_row() {
+    local filepath="$1"
+    local label="$2"
+    local filename
+    filename=$(basename "$filepath")
+    [ "$filename" = "ignore" ] && return
+
+    local mod_epoch
+    mod_epoch=$(stat -c %Y "$filepath" 2>/dev/null || stat -f %m "$filepath" 2>/dev/null)
+    local mod_human
+    mod_human=$(date -u -d "@$mod_epoch" "+%Y-%m-%d %H:%M:%S" 2>/dev/null \
+             || date -u -r "$mod_epoch" "+%Y-%m-%d %H:%M:%S" 2>/dev/null)
+    local age_sec=$(( NOW_EPOCH - mod_epoch ))
+    local age_min=$(( age_sec / 60 ))
+    local age_h=$(( age_sec / 3600 ))
+
+    local thresholds
+    thresholds=$(get_thresholds "$label" "$filename")
+    local class_text
+    class_text=$(classify_age "$age_sec" "$thresholds")
+    local status_class status_text
+    status_class=$(awk '{print $1}' <<< "$class_text")
+    status_text=$(awk '{print $2}' <<< "$class_text")
+
+    local age_str
+    if   [ "$age_h"   -ge 48 ]; then age_str="$(( age_h / 24 ))d ago"
+    elif [ "$age_h"   -ge 1  ]; then age_str="${age_h}h ago"
+    elif [ "$age_min" -ge 1  ]; then age_str="${age_min}m ago"
+    else                             age_str="${age_sec}s ago"
+    fi
+
+    echo "    <tr>"
+    echo "      <td class='name'>${filename}</td>"
+    echo "      <td class='category'>${label}</td>"
+    echo "      <td class='timestamp'>${mod_human} UTC</td>"
+    echo "      <td class='age'><span class='badge ${status_class}'>${status_text}</span><span class='age-str'> ${age_str}</span></td>"
+    echo "    </tr>"
+}
+
 build_rows() {
     local dir="$1"
     local label="$2"
@@ -52,39 +173,8 @@ build_rows() {
 
     local found=0
     while IFS= read -r -d '' filepath; do
-        local filename
-        filename=$(basename "$filepath")
-        [ $filename == ignore ] && continue
         found=1
-        local mod_epoch
-        mod_epoch=$(stat -c %Y "$filepath" 2>/dev/null || stat -f %m "$filepath" 2>/dev/null)
-        local mod_human
-        mod_human=$(date -u -d "@$mod_epoch" "+%Y-%m-%d %H:%M:%S" 2>/dev/null \
-                 || date -u -r "$mod_epoch" "+%Y-%m-%d %H:%M:%S" 2>/dev/null)
-        local age_sec=$(( NOW_EPOCH - mod_epoch ))
-        local age_min=$(( age_sec / 60 ))
-        local age_h=$(( age_sec / 3600 ))
-
-        local status_class status_text
-        if   [ "$age_sec" -lt 300 ];   then status_class="ok";    status_text="FRESH"
-        elif [ "$age_sec" -lt 1800 ];  then status_class="warn";  status_text="RECENT"
-        elif [ "$age_sec" -lt 86400 ]; then status_class="aged";  status_text="AGED"
-        else                                status_class="stale"; status_text="STALE"
-        fi
-
-        local age_str
-        if   [ "$age_h"   -ge 48 ]; then age_str="$(( age_h / 24 ))d ago"
-        elif [ "$age_h"   -ge 1  ]; then age_str="${age_h}h ago"
-        elif [ "$age_min" -ge 1  ]; then age_str="${age_min}m ago"
-        else                             age_str="${age_sec}s ago"
-        fi
-
-        echo "    <tr>"
-        echo "      <td class='name'>${filename}</td>"
-        echo "      <td class='category'>${label}</td>"
-        echo "      <td class='timestamp'>${mod_human} UTC</td>"
-        echo "      <td class='age'><span class='badge ${status_class}'>${status_text}</span><span class='age-str'> ${age_str}</span></td>"
-        echo "    </tr>"
+        emit_file_row "$filepath" "$label"
     done < <(find "$dir" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
 
     if [ "$found" -eq 0 ]; then
@@ -92,7 +182,6 @@ build_rows() {
     fi
 }
 
-# Iterate each named data subdir, emit a subdir-header row then its files.
 build_data_rows() {
     local first=1
     for subdir in "${DATA_SUBDIRS[@]}"; do
@@ -105,9 +194,7 @@ build_data_rows() {
         echo "    <tr class='subdir-header'>"
         echo "      <td colspan='4'>"
         echo "        <span class='subdir-label'>${subdir}/</span>"
-        if [ ! -d "$dir" ]; then
-            echo "        <span class='subdir-missing'>directory not found</span>"
-        fi
+        [ ! -d "$dir" ] && echo "        <span class='subdir-missing'>directory not found</span>"
         echo "      </td>"
         echo "    </tr>"
 
@@ -115,7 +202,7 @@ build_data_rows() {
     done
 }
 
-# Count files across all named data subdirs
+# ── File counters ────────────────────────────────────────────────────────────
 count_data_files() {
     local total=0
     for subdir in "${DATA_SUBDIRS[@]}"; do
@@ -126,19 +213,19 @@ count_data_files() {
     echo "$total"
 }
 
-# Emit JSON entry objects for every file in a given directory.
-# Args: $1=directory  $2=category-label  $3=ref to first-entry flag (0/1)
+# ── JSON builder ─────────────────────────────────────────────────────────────
+# Args: $1=directory  $2=category-label  $3=nameref to first-entry flag
 build_json_entries() {
     local dir="$1"
     local label="$2"
-    local -n _first_entry="$3"   # nameref so caller's flag is updated
+    local -n _first_entry="$3"
 
     [ ! -d "$dir" ] && return
 
     while IFS= read -r -d '' filepath; do
         local filename
         filename=$(basename "$filepath")
-        [ "$filename" == ignore ] && continue
+        [ "$filename" = "ignore" ] && continue
 
         local mod_epoch
         mod_epoch=$(stat -c %Y "$filepath" 2>/dev/null || stat -f %m "$filepath" 2>/dev/null)
@@ -147,14 +234,13 @@ build_json_entries() {
                  || date -u -r "$mod_epoch"   "+%Y-%m-%dT%H:%M:%SZ" 2>/dev/null)
         local age_sec=$(( NOW_EPOCH - mod_epoch ))
 
+        local thresholds
+        thresholds=$(get_thresholds "$label" "$filename")
+        local class_text
+        class_text=$(classify_age "$age_sec" "$thresholds")
         local status_text
-        if   [ "$age_sec" -lt 300 ];   then status_text="FRESH"
-        elif [ "$age_sec" -lt 1800 ];  then status_text="RECENT"
-        elif [ "$age_sec" -lt 86400 ]; then status_text="AGED"
-        else                                status_text="STALE"
-        fi
+        status_text=$(awk '{print $2}' <<< "$class_text")
 
-        # Escape filename for JSON (handle backslash and double-quote)
         local safe_name safe_label
         safe_name=$(printf '%s' "$filename" | sed 's/\\/\\\\/g; s/"/\\"/g')
         safe_label=$(printf '%s' "$label"   | sed 's/\\/\\\\/g; s/"/\\"/g')
@@ -171,7 +257,6 @@ build_json_entries() {
     done < <(find "$dir" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
 }
 
-# Build the complete JSON document and write it to OUTPUT_JSON
 build_json() {
     local first_entry=1
 
@@ -182,14 +267,16 @@ build_json() {
         printf '  "version": "%s",\n'            "$VERSION"
         printf '  "summary": {\n'
         printf '    "data_product_files": %d,\n' "$DATA_COUNT"
+        printf '    "sdo_files": %d,\n'          "$SDO_COUNT"
         printf '    "map_files": %d,\n'          "$MAPS_COUNT"
-        printf '    "total_files": %d\n'         "$(( DATA_COUNT + MAPS_COUNT ))"
+        printf '    "total_files": %d\n'         "$(( DATA_COUNT + SDO_COUNT + MAPS_COUNT ))"
         printf '  },\n'
         printf '  "files": [\n'
 
         for subdir in "${DATA_SUBDIRS[@]}"; do
             build_json_entries "${DATA_DIR}/${subdir}" "$subdir" first_entry
         done
+        build_json_entries "$SDO_DIR"  "SDO" first_entry
         build_json_entries "$MAPS_DIR" "map" first_entry
 
         printf '\n  ]\n'
@@ -197,7 +284,9 @@ build_json() {
     } > "$OUTPUT_JSON"
 }
 
+# ── Counts ───────────────────────────────────────────────────────────────────
 DATA_COUNT=$(count_data_files)
+SDO_COUNT=$(find "$SDO_DIR"  -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')
 MAPS_COUNT=$(find "$MAPS_DIR" -maxdepth 1 -type f 2>/dev/null | wc -l | tr -d ' ')
 
 # ── Write HTML ───────────────────────────────────────────────────────────────
@@ -219,6 +308,7 @@ cat << HTML_HEAD
       --border:   #e0dbd4;
       --accent:   #3d6b99;
       --accent2:  #3a7a56;
+      --accent3:  #7a5a99;
       --dim:      #9a9590;
       --text:     #2e2b27;
       --muted:    #7a756e;
@@ -226,6 +316,7 @@ cat << HTML_HEAD
       --warn:     #8a6200;
       --aged:     #8a4e00;
       --stale:    #9e2020;
+      --static:   #3d6b99;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -278,7 +369,7 @@ cat << HTML_HEAD
       font-weight: 500;
     }
 
-    /* ── Summary bar: 2-up grid so it wraps nicely on mobile ── */
+    /* ── Summary bar ── */
     .summary {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -293,9 +384,7 @@ cat << HTML_HEAD
       flex-direction: column;
       gap: 2px;
     }
-    /* right column has no right border */
     .summary-item:nth-child(2n) { border-right: none; }
-    /* bottom row has no bottom border */
     .summary-item:nth-last-child(-n+2) { border-bottom: none; }
     .summary-label { font-size: 0.62rem; letter-spacing: 0.06em; color: var(--muted); text-transform: uppercase; }
     .summary-value { font-family: 'IBM Plex Mono', monospace; font-size: 1.25rem; font-weight: 500; color: var(--accent); }
@@ -319,7 +408,8 @@ cat << HTML_HEAD
       width: 4px; height: 18px; background: var(--accent);
       border-radius: 2px; flex-shrink: 0; opacity: 0.7;
     }
-    .maps-icon { background: var(--accent2); }
+    .maps-icon  { background: var(--accent2); }
+    .sdo-icon   { background: var(--accent3); }
     .section-title {
       font-family: 'IBM Plex Sans', sans-serif; font-size: 0.78rem; font-weight: 600;
       letter-spacing: 0.07em; color: var(--text); text-transform: uppercase;
@@ -359,7 +449,7 @@ cat << HTML_HEAD
     td.name {
       font-family: 'IBM Plex Mono', monospace;
       color: var(--text);
-      word-break: break-all;   /* long filenames wrap rather than overflow */
+      word-break: break-all;
       min-width: 0;
     }
     td.category { color: var(--muted); font-size: 0.73rem; white-space: nowrap; }
@@ -376,10 +466,11 @@ cat << HTML_HEAD
       font-size: 0.63rem; font-family: 'IBM Plex Sans', sans-serif;
       font-weight: 600; letter-spacing: 0.03em; vertical-align: middle;
     }
-    .badge.ok    { background: #e8f4ee; color: var(--ok);    border: 1px solid #b8d8c5; }
-    .badge.warn  { background: #f7f0de; color: var(--warn);  border: 1px solid #dfc882; }
-    .badge.aged  { background: #f7ede0; color: var(--aged);  border: 1px solid #ddb882; }
-    .badge.stale { background: #f5e8e8; color: var(--stale); border: 1px solid #d8a8a8; }
+    .badge.ok     { background: #e8f4ee; color: var(--ok);     border: 1px solid #b8d8c5; }
+    .badge.warn   { background: #f7f0de; color: var(--warn);   border: 1px solid #dfc882; }
+    .badge.aged   { background: #f7ede0; color: var(--aged);   border: 1px solid #ddb882; }
+    .badge.stale  { background: #f5e8e8; color: var(--stale);  border: 1px solid #d8a8a8; }
+    .badge.static { background: #e8eef5; color: var(--static); border: 1px solid #a8bed8; }
 
     /* ── Footer ── */
     footer {
@@ -401,27 +492,20 @@ cat << HTML_HEAD
       50%       { opacity: 0.3;  transform: scale(0.7); }
     }
 
-    /* ── Mobile (≤ 600px): hide timestamp + category columns ── */
+    /* ── Mobile ── */
     @media (max-width: 600px) {
       header   { padding: 14px 16px 12px; }
       .section { padding: 14px 16px; }
       .legend  { padding: 9px 16px; gap: 8px; }
       footer   { padding: 10px 16px; }
-
       .summary-item { padding: 10px 14px; }
       .summary-value { font-size: 1.05rem; }
-
       .section-path { display: none; }
-
-      /* drop the two least-important columns to keep the table readable */
       th.col-category,  td.category  { display: none; }
       th.col-timestamp, td.timestamp { display: none; }
-
       td.age { white-space: normal; }
       th, td { padding: 6px 8px; }
     }
-
-    /* ── Very small screens (≤ 380px): single-column summary ── */
     @media (max-width: 380px) {
       .callsign { font-size: 1.15rem; }
       .clock    { font-size: 0.72rem; }
@@ -452,12 +536,12 @@ cat << HTML_HEAD
     <span class="summary-value">${DATA_COUNT}</span>
   </div>
   <div class="summary-item">
-    <span class="summary-label">Map Files</span>
-    <span class="summary-value">${MAPS_COUNT}</span>
+    <span class="summary-label">SDO Files</span>
+    <span class="summary-value">${SDO_COUNT}</span>
   </div>
   <div class="summary-item">
-    <span class="summary-label">Total Files</span>
-    <span class="summary-value">$(( DATA_COUNT + MAPS_COUNT ))</span>
+    <span class="summary-label">Map Files</span>
+    <span class="summary-value">${MAPS_COUNT}</span>
   </div>
   <div class="summary-item">
     <span class="summary-label">Last Board Update</span>
@@ -467,10 +551,11 @@ cat << HTML_HEAD
 
 <div class="legend">
   <span style="font-size:0.63rem;color:var(--muted);margin-right:2px">STATUS:</span>
-  <div class="legend-item"><span class="badge ok">FRESH</span> &lt; 5 min</div>
-  <div class="legend-item"><span class="badge warn">RECENT</span> 5 – 30 min</div>
-  <div class="legend-item"><span class="badge aged">AGED</span> 30 min – 24 h</div>
-  <div class="legend-item"><span class="badge stale">STALE</span> &gt; 24 h</div>
+  <div class="legend-item"><span class="badge ok">FRESH</span> within normal update window</div>
+  <div class="legend-item"><span class="badge warn">RECENT</span> slightly overdue</div>
+  <div class="legend-item"><span class="badge aged">AGED</span> significantly overdue</div>
+  <div class="legend-item"><span class="badge stale">STALE</span> may need attention</div>
+  <div class="legend-item"><span class="badge static">STATIC</span> intentionally fixed</div>
 </div>
 
 <!-- Data Products -->
@@ -478,7 +563,7 @@ cat << HTML_HEAD
   <div class="section-header">
     <div class="section-icon"></div>
     <span class="section-title">Data Products</span>
-    <span class="section-path">${DATA_DIR}/{Bz,NOAASpaceWX,ONTA,RSS,SDO,aurora,contests,cty,drap,dst,dxpeds,esats,geomag,solar-flux,solar-wind,ssn,worldwx,xray}</span>
+    <span class="section-path">${DATA_DIR}/{Bz,NOAASpaceWX,ONTA,aurora,contests,cty,drap,dst,dxpeds,esats,geomag,solar-flux,solar-wind,ssn,worldwx,xray}</span>
   </div>
   <table>
     <thead>
@@ -493,6 +578,32 @@ cat << HTML_HEAD
 HTML_HEAD
 
 build_data_rows
+
+cat << HTML_SDO
+    </tbody>
+  </table>
+</div>
+
+<!-- SDO -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon sdo-icon"></div>
+    <span class="section-title">SDO</span>
+    <span class="section-path">${SDO_DIR}</span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Filename</th>
+        <th class="col-category">Category</th>
+        <th class="col-timestamp">Last Modified (UTC)</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+HTML_SDO
+
+build_rows "$SDO_DIR" "SDO"
 
 cat << HTML_MAPS
     </tbody>
@@ -526,7 +637,7 @@ cat << HTML_FOOT
 </div>
 
 <footer>
-  <div class="footer-note">73 · ${CALLSIGN} · Generated by generate_status.sh / ${VERSION}</div>
+  <div class="footer-note">73 · ${CALLSIGN} · Generated by generate_status_json.sh / ${VERSION}</div>
   <div class="refresh-indicator">
     <div class="pulse"></div>
     Auto-refresh active · every 5 minutes
