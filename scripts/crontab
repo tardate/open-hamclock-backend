@@ -92,3 +92,4 @@ LANG=C
 0 0,12 * * *           /opt/hamclock-backend/scripts/update_wx_mb_maps.sh   >> /opt/hamclock-backend/logs/update_wx_mb_maps.log  2>&1
 
 #   */15 * * * * /opt/hamclock-backend/generate_status.sh >> /opt/hamclock-backend/logs/generate_status.log 2>&1
+#   */15 * * * * /opt/hamclock-backend/generate_status_json.sh >> /opt/hamclock-backend/logs/generate_status_json.log 2>&1
