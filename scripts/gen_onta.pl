@@ -307,7 +307,6 @@ sub resolve_location {
 
             my $freq = $s->{QRG}  // next;   # kHz
             my $mode = uc($s->{MODE} // '');
-            next unless length $mode;         # skip spots with no mode
 
             my $park = $s->{REF}  // next;
             my $lat  = $s->{LAT}  // next;
