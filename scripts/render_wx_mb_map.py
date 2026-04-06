@@ -1,4 +1,41 @@
 #!/usr/bin/env python3
+# ============================================================
+#
+#   ██████╗ ██╗  ██╗██████╗
+#  ██╔═══██╗██║  ██║██╔══██╗
+#  ██║   ██║███████║██████╔╝
+#  ██║   ██║██╔══██║██╔══██╗
+#  ╚██████╔╝██║  ██║██████╔╝
+#   ╚═════╝ ╚═╝  ╚═╝╚═════╝
+#
+#  Open HamClock Backend
+#  render_wx_mb_map.py
+#
+#  MIT License
+#  Copyright (C) 2026 Open HamClock Backend (OHB) Contributors
+#
+#  Permission is hereby granted, free of charge, to any person
+#  obtaining a copy of this software and associated documentation
+#  files (the "Software"), to deal in the Software without
+#  restriction, including without limitation the rights to use,
+#  copy, modify, merge, publish, distribute, sublicense, and/or
+#  sell copies of the Software, and to permit persons to whom the
+#  Software is furnished to do so, subject to the following
+#  conditions:
+#
+#  The above copyright notice and this permission notice shall be
+#  included in all copies or substantial portions of the Software.
+#
+#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+#  OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+#  HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+#  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+#  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+#  OTHER DEALINGS IN THE SOFTWARE.
+#
+# ============================================================
 """
 render_wx_mb_map.py
 
@@ -76,41 +113,28 @@ def box_blur(arr: np.ndarray, passes: int = 1) -> np.ndarray:
         ) / 5.0
     return a
 
-
 def hamclock_temp_cmap():
     """
-    HamClock Celsius palette approximated from sampled color bar.
-    User samples:
-      <-40 = #D0E4F8
-       -40 = #B0D4F8
-       -30 = #80BCF8
-       -20 = #70A4F8
-       -10 = #3874D0
-         0 = #2060A8
-        10 = #009CD8
-        20 = #B8E4B0
-        30 = #F88C20
-        40 = #E80050
-        50 = #680028
+    HamClock Celsius palette - warm-shifted to better match global temps.
     """
     stops = [
-        (-50, "#D0E4F8"),  # also covers < -40
+        (-50, "#D0E4F8"),
         (-40, "#B0D4F8"),
         (-30, "#80BCF8"),
         (-20, "#70A4F8"),
         (-10, "#3874D0"),
         (  0, "#2060A8"),
-        ( 10, "#009CD8"),
-        ( 20, "#B8E4B0"),
-        ( 30, "#F88C20"),
-        ( 40, "#E80050"),
-        ( 50, "#680028"),  # assumed from "#G80028"
+        ( 10, "#009CD8"),  # cyan transition
+        ( 15, "#B8E4B0"),  # green
+        ( 22, "#F8D020"),  # yellow
+        ( 28, "#F88C20"),  # orange
+        ( 36, "#E80050"),  # red/pink
+        ( 50, "#680028"),
     ]
     vals = np.array([v for v, _ in stops], dtype=np.float64)
     vals = (vals - vals.min()) / (vals.max() - vals.min())
     cols = [c for _, c in stops]
     return LinearSegmentedColormap.from_list("hamclock_celsius", list(zip(vals, cols)))
-
 
 def pick_required(msgs, *, short_names, type_of_level=None, level=None, label="field"):
     for sn in short_names:
