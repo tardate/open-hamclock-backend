@@ -1,12 +1,45 @@
 #!/usr/bin/env perl
+# ============================================================
+#
+#   ██████╗ ██╗  ██╗██████╗
+#  ██╔═══██╗██║  ██║██╔══██╗
+#  ██║   ██║███████║██████╔╝
+#  ██║   ██║██╔══██║██╔══██╗
+#  ╚██████╔╝██║  ██║██████╔╝
+#   ╚═════╝ ╚═╝  ╚═╝╚═════╝
+#
+#  Open HamClock Backend
+#  filter_amsat_active.pl
+#
+#  MIT License
+#  Copyright (C) 2026 Open HamClock Backend (OHB) Contributors
+#
+#  Permission is hereby granted, free of charge, to any person
+#  obtaining a copy of this software and associated documentation
+#  files (the "Software"), to deal in the Software without
+#  restriction, including without limitation the rights to use,
+#  copy, modify, merge, publish, distribute, sublicense, and/or
+#  sell copies of the Software, and to permit persons to whom the
+#  Software is furnished to do so, subject to the following
+#  conditions:
+#
+#  The above copyright notice and this permission notice shall be
+#  included in all copies or substantial portions of the Software.
+#
+#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+#  OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+#  HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+#  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+#  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+#  OTHER DEALINGS IN THE SOFTWARE.
+#
+# ============================================================
 # filter_amsat_active.pl
 # Filters the Celestrak TLE file to satellites defined in the ALIAS map
 # (i.e., those shown on HamClock's satellite map), and writes esats.txt
 # with friendly AMSAT names.
-#
-# No longer fetches AMSAT status page — includes all mapped satellites
-# regardless of reported activity.
-#
 
 use strict;
 use warnings;
@@ -33,6 +66,7 @@ my %ALIAS = (
     'AO-95'             => { tle => 'FOX-1CLIFF (AO-95)',      out => 'AO-95'      },
     'AO-123'            => { tle => 'ASRTU-1 (AO-123)',        out => 'AO-123'     },
     'AO-123_[FM]'       => { tle => 'ASRTU-1 (AO-123)',        out => 'AO-123'     },
+    'AO-123_[SSTV]'     => { tle => 'ASRTU-1 (AO-123)',        out => 'AO-123'     },
     'FO-29'             => { tle => 'JAS-2 (FO-29)',           out => 'FO-29'      },
     'FO-29_[V/U]'       => { tle => 'JAS-2 (FO-29)',           out => 'FO-29'      },
     'JO-97'             => { tle => 'JY1SAT (JO-97)',          out => 'JO-97'      },
@@ -40,7 +74,6 @@ my %ALIAS = (
     'SO-50_[FM]'        => { tle => 'SAUDISAT 1C (SO-50)',     out => 'SO-50'      },
     'SO-125'            => { tle => 'HADES-ICM',               out => 'SO-125'     },
     'SO-125_[FM]'       => { tle => 'HADES-ICM',               out => 'SO-125'     },
-    'IO-86'             => { tle => '',                        out => ''           },  # not in Celestrak
     'IO-86_[FM]'        => { tle => '',                        out => ''           },  # not in Celestrak
     'PO-101'            => { tle => 'DIWATA-2B',               out => 'PO-101'     },
     'PO-101_[FM]'       => { tle => 'DIWATA-2B',               out => 'PO-101'     },
@@ -72,6 +105,8 @@ my %ALIAS = (
     'RS58S_[SSTV]'      => { tle => 'MONITOR-3 (RS58S)',        out => 'RS58S'      },
     'RS18S SSTV'        => { tle => '',                        out => ''           },  # not in Celestrak
     'RS18S_[SSTV]'      => { tle => '',                        out => ''           },  # not in Celestrak
+    'RS38S'             => { tle => 'VIZARD-METEO (RS38S)',    out => 'RS38S'      },  # NORAD 57189
+    'RS38S_[SSTV]'      => { tle => 'VIZARD-METEO (RS38S)',    out => 'RS38S'      },  # NORAD 57189
 
     # --- GEO / no TLE ---
     'QO-100 NB'         => { tle => '',                        out => ''           },
@@ -85,6 +120,8 @@ my %ALIAS = (
     'SONATE-2 APRS'     => { tle => 'SONATE-2',                out => 'SONATE-2'   },
     'SONATE-2'          => { tle => 'SONATE-2',                out => 'SONATE-2'   },
     'SONATE-2_[APRS]'   => { tle => 'SONATE-2',                out => 'SONATE-2'   },
+    'KNACKSAT-2'        => { tle => 'KNACKSAT-2',              out => 'KNACKSAT-2' },  # NORAD 67683
+    'KNACKSAT-2_[APRS]' => { tle => 'KNACKSAT-2',              out => 'KNACKSAT-2' },  # NORAD 67683
 
     # --- Microwave / experimental ---
     'CATSAT'            => { tle => 'CATSAT',                  out => 'CATSAT'     },
@@ -110,6 +147,25 @@ my %ALIAS = (
     'GRBBETA_[GFSK]'    => { tle => 'GRBBETA',                 out => 'GRBBeta'    },
     'GRBBETA_[UHF_DIGI]'=> { tle => 'GRBBETA',                 out => 'GRBBeta'    },
     'GRBBETA_[VHF_DIGI]'=> { tle => 'GRBBETA',                 out => 'GRBBeta'    },
+
+    # --- HADES-SA (AMSAT-EA, Spain) — temp NORAD 98380, launched 2026-03-30 ---
+    'HADES-SA'              => { tle => 'HADES-SA',            out => 'HADES-SA'   },
+    'HADES-SA_[CODEC2]'     => { tle => 'HADES-SA',            out => 'HADES-SA'   },
+    'HADES-SA_[FSK]'        => { tle => 'HADES-SA',            out => 'HADES-SA'   },
+    'HADES-SA_[SSDV]'       => { tle => 'HADES-SA',            out => 'HADES-SA'   },
+
+    # --- CAS-3H (LilacSat-2, Harbin) — NORAD 40908 ---
+    # Celestrak feed uses "LILACSAT-2" (hyphen); CATNR rename writes "LILACSAT 2" (space)
+    'CAS-3H'            => { tle => 'LILACSAT-2',              out => 'CAS-3H'     },
+    'CAS-3H_[FM]'       => { tle => 'LILACSAT-2',              out => 'CAS-3H'     },
+
+    # --- Luca (Montenegro Space Research) — NORAD 67287, fetched by CATNR, renamed to "LUCA" ---
+    'LUCA'              => { tle => 'LUCA',                    out => 'Luca'       },
+    'LUCA_[SSDV]'       => { tle => 'LUCA',                    out => 'Luca'       },
+
+    # --- OTP-2 (Rogue Space) — NORAD 63235 ---
+    'OTP-2'             => { tle => 'OTP-2',                   out => 'OTP-2'      },
+    'OTP-2_[MUSIC]'     => { tle => 'OTP-2',                   out => 'OTP-2'      },
 
     # --- Foresail-1p (Finland) — temp NORAD 98467, not yet in standard Celestrak feeds ---
     'FORESAIL-1P'           => { tle => 'FORESAIL-1P',         out => 'Foresail-1p'},

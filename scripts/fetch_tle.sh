@@ -1,4 +1,41 @@
 #!/usr/bin/env bash
+# ============================================================
+#
+#   ██████╗ ██╗  ██╗██████╗
+#  ██╔═══██╗██║  ██║██╔══██╗
+#  ██║   ██║███████║██████╔╝
+#  ██║   ██║██╔══██║██╔══██╗
+#  ╚██████╔╝██║  ██║██████╔╝
+#   ╚═════╝ ╚═╝  ╚═╝╚═════╝
+#
+#  Open HamClock Backend
+#  fetch_tle.sh
+#
+#  MIT License
+#  Copyright (C) 2026 Open HamClock Backend (OHB) Contributors
+#
+#  Permission is hereby granted, free of charge, to any person
+#  obtaining a copy of this software and associated documentation
+#  files (the "Software"), to deal in the Software without
+#  restriction, including without limitation the rights to use,
+#  copy, modify, merge, publish, distribute, sublicense, and/or
+#  sell copies of the Software, and to permit persons to whom the
+#  Software is furnished to do so, subject to the following
+#  conditions:
+#
+#  The above copyright notice and this permission notice shall be
+#  included in all copies or substantial portions of the Software.
+#
+#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+#  OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+#  HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+#  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+#  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+#  OTHER DEALINGS IN THE SOFTWARE.
+#
+# ============================================================
 set -euo pipefail
 
 TLEDIR="/opt/hamclock-backend/tle"
@@ -9,6 +46,12 @@ ESATS_OUT="/opt/hamclock-backend/htdocs/ham/HamClock/esats/esats.txt"
 
 FILTER="/opt/hamclock-backend/scripts/filter_amsat_active.pl"
 
+MOONTLE_SCRIPT="${MOONTLE_SCRIPT:-/opt/hamclock-backend/scripts/moontle.py}"
+PYTHON_BIN"${PYTHON_BIN-/opt/hamclock-backend/venv/bin/python3}"
+if [ ! -x "$PYTHON_BIN" ]; then
+    PYTHON_BIN="/usr/bin/python3"
+fi
+
 mkdir -p "$TLEDIR" "$ARCHIVE" "$(dirname "$ESATS_OUT")"
 
 URLS=(
@@ -17,43 +60,76 @@ URLS=(
   "https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=tle"
 )
 
+CATNR_IDS=(
+    62394   # CROCUBE
+    62391   # LASARSAT
+    60237   # GRBBETA
+    98380   # HADES-SA (temp ID, launched 2026-03-30)
+    67683   # KNACKSAT-2
+    63235   # OTP-2 (Rogue Space)
+)
+
+# Satellites whose Celestrak name clashes or is absent — fetch by CATNR
+# and rewrite the name line so the filter can match them.
+declare -A CATNR_RENAME=(
+    [67287]="LUCA"  # Luca (Montenegro) — Celestrak returns "LUCA (RS90S)", rename to "LUCA" for filter
+)
+
 ts() { date -u +"%Y%m%dT%H%M%SZ"; }
 
 echo "[$(date -u)] Fetching TLEs..."
 
 : > "$TMPFILE"
 
+# Use -z to send If-Modified-Since based on existing tles.txt mtime.
+# Celestrak returns 304/empty if unchanged, full data if updated.
+# Drop -f so a 403 "not updated" response doesn't abort the script.
 for u in "${URLS[@]}"; do
-    curl -fsSL "$u" >> "$TMPFILE"
+    curl -A "HamClock-Backend/1.0" -sSL \
+        ${TLEFILE:+-z "$TLEFILE"} \
+        "$u" >> "$TMPFILE" \
+        || echo "WARNING: failed to fetch $u" >&2
     echo >> "$TMPFILE"
 done
-
-CATNR_IDS=(
-    62394   # CROCUBE
-    62391   # LASARSAT
-    60237   # GRBBETA
-)
 
 for id in "${CATNR_IDS[@]}"; do
-    curl -fsSL "https://celestrak.org/NORAD/elements/gp.php?CATNR=${id}&FORMAT=tle" >> "$TMPFILE" || \
-        echo "Not found: NORAD $id" >&2
+    curl -A "HamClock-Backend/1.0" -sSL \
+        "https://celestrak.org/NORAD/elements/gp.php?CATNR=${id}&FORMAT=tle" >> "$TMPFILE" \
+        || echo "WARNING: NORAD $id not fetched" >&2
     echo >> "$TMPFILE"
 done
 
-# Sanity check
+# Sanity check — if Celestrak returned nothing new (all If-Modified-Since
+# responses were empty), fall back to the existing tles.txt rather than
+# wiping it with an empty file.
 if ! grep -q '^1 ' "$TMPFILE"; then
-    echo "ERROR: no TLE records"
-    exit 1
+    echo "NOTE: No new TLE data from Celestrak (data unchanged) — keeping existing tles.txt"
+    rm -f "$TMPFILE"
+else
+    STAMP="$(ts)"
+    cp "$TLEFILE" "$ARCHIVE/tles-${STAMP}-old.txt" 2>/dev/null || true
+    mv "$TMPFILE" "$TLEFILE"
+    echo "TLEs installed ($STAMP)"
+
+    # Keep last 60 snapshots
+    mapfile -t old_archives < <(ls -1t "$ARCHIVE"/tles-* 2>/dev/null | tail -n +61)
+    [[ ${#old_archives[@]} -gt 0 ]] && rm -- "${old_archives[@]}"
 fi
 
-STAMP="$(ts)"
-cp "$TLEFILE" "$ARCHIVE/tles-${STAMP}-old.txt" 2>/dev/null || true
-mv "$TMPFILE" "$TLEFILE"
-echo "TLEs installed ($STAMP)"
-
-# Keep last 60 snapshots
-mapfile -t old_archives < <(ls -1t "$ARCHIVE"/tles-* 2>/dev/null | tail -n +61)
-[[ ${#old_archives[@]} -gt 0 ]] && rm -- "${old_archives[@]}"
+# Fetch satellites that need name rewriting (name clash or absent in Celestrak).
+# Must run after tles.txt is installed so the mv doesn't overwrite our additions.
+for id in "${!CATNR_RENAME[@]}"; do
+    friendly="${CATNR_RENAME[$id]}"
+    raw=$(curl -A "HamClock-Backend/1.0" -sSL \
+        "https://celestrak.org/NORAD/elements/gp.php?CATNR=${id}&FORMAT=tle") || true
+    if echo "$raw" | grep -q '^1 '; then
+        echo "$raw" | awk -v name="$friendly" 'NR==1{print name} NR>1{print}' >> "$TLEFILE"
+        echo >> "$TLEFILE"
+        echo "  Added NORAD $id as '$friendly'" >&2
+    else
+        echo "WARNING: NORAD $id ($friendly) not fetched" >&2
+    fi
+done
 
 # Always run AMSAT filter
 echo "[$(ts)] Running AMSAT status filter..."
@@ -61,4 +137,15 @@ if env ESATS_TLE_CACHE="$TLEFILE" ESATS_OUT="$ESATS_OUT" perl "$FILTER"; then
     echo "[$(ts)] AMSAT filter complete — esats.txt updated"
 else
     echo "WARNING: AMSAT filter failed — esats.txt not updated"
+fi
+
+# Append Moon TLE
+echo "[$(ts)] Generating Moon TLE..."
+if [[ -f "$MOONTLE_SCRIPT" ]]; then
+    MOON_TLE=$("$PYTHON_BIN -W ignore "$MOONTLE_SCRIPT" -q 2>/dev/null) && {
+        echo "$MOON_TLE" >> "$ESATS_OUT"
+        echo "[$(ts)] Moon TLE appended to esats.txt"
+    } || echo "WARNING: moontle.py failed — Moon TLE not added"
+else
+    echo "WARNING: moontle.py not found at $MOONTLE_SCRIPT — Moon TLE not added"
 fi
