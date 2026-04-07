@@ -47,7 +47,7 @@ ESATS_OUT="/opt/hamclock-backend/htdocs/ham/HamClock/esats/esats.txt"
 FILTER="/opt/hamclock-backend/scripts/filter_amsat_active.pl"
 
 MOONTLE_SCRIPT="${MOONTLE_SCRIPT:-/opt/hamclock-backend/scripts/moontle.py}"
-PYTHON_BIN"${PYTHON_BIN-/opt/hamclock-backend/venv/bin/python3}"
+PYTHON_BIN="${PYTHON_BIN-/opt/hamclock-backend/venv/bin/python3}"
 if [ ! -x "$PYTHON_BIN" ]; then
     PYTHON_BIN="/usr/bin/python3"
 fi
