@@ -142,7 +142,7 @@ fi
 # Append Moon TLE
 echo "[$(ts)] Generating Moon TLE..."
 if [[ -f "$MOONTLE_SCRIPT" ]]; then
-    MOON_TLE=$("$PYTHON_BIN -W ignore "$MOONTLE_SCRIPT" -q 2>/dev/null) && {
+    MOON_TLE=$("$PYTHON_BIN" -W ignore "$MOONTLE_SCRIPT" -q 2>/dev/null) && {
         echo "$MOON_TLE" >> "$ESATS_OUT"
         echo "[$(ts)] Moon TLE appended to esats.txt"
     } || echo "WARNING: moontle.py failed — Moon TLE not added"
