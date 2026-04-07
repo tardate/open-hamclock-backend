@@ -47,7 +47,7 @@ ESATS_OUT="/opt/hamclock-backend/htdocs/ham/HamClock/esats/esats.txt"
 FILTER="/opt/hamclock-backend/scripts/filter_amsat_active.pl"
 
 MOONTLE_SCRIPT="${MOONTLE_SCRIPT:-/opt/hamclock-backend/scripts/moontle.py}"
-PYTHON_BIN"${PYTHON_BIN-/opt/hamclock-backend/venv/bin/python3}"
+PYTHON_BIN="${PYTHON_BIN-/opt/hamclock-backend/venv/bin/python3}"
 if [ ! -x "$PYTHON_BIN" ]; then
     PYTHON_BIN="/usr/bin/python3"
 fi
@@ -142,7 +142,7 @@ fi
 # Append Moon TLE
 echo "[$(ts)] Generating Moon TLE..."
 if [[ -f "$MOONTLE_SCRIPT" ]]; then
-    MOON_TLE=$("$PYTHON_BIN -W ignore "$MOONTLE_SCRIPT" -q 2>/dev/null) && {
+    MOON_TLE=$("$PYTHON_BIN" -W ignore "$MOONTLE_SCRIPT" -q 2>/dev/null) && {
         echo "$MOON_TLE" >> "$ESATS_OUT"
         echo "[$(ts)] Moon TLE appended to esats.txt"
     } || echo "WARNING: moontle.py failed — Moon TLE not added"
