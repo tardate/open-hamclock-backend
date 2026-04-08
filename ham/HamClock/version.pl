@@ -6,8 +6,13 @@ use CGI;
 my $q = CGI->new;
 my $cache_dir = "/opt/hamclock-backend/cache";
 
-# 1. Parse User-Agent (e.g., HamClock/4.22b01)
+# 1. Parse User-Agent
 my $ua_string = $q->user_agent() || "";
+
+# Check for legacy ESPHamClock clients first
+my $is_esp = ($ua_string =~ /ESPHamClock/i);
+
+# Existing version extraction for standard clients
 my ($client_ver) = $ua_string =~ m|HamClock-.*?/([\d\.b]+)|i;
 
 # 2. Get the current Stable version number
@@ -23,7 +28,10 @@ if (-f $stable_path) {
 # 3. Determine Offer Type
 my $offer_type = "stable";
 
-if ($client_ver && $client_ver =~ /b/i) {
+if ($is_esp) {
+    # Targeted edit for ESP clients: force version 3.10
+    $offer_type = "3.10";
+} elsif ($client_ver && $client_ver =~ /b/i) {
     # Extract numeric base: "4.22b01" -> "4.22"
     my ($base_ver) = $client_ver =~ /^([\d\.]+)/;
 
@@ -32,7 +40,6 @@ if ($client_ver && $client_ver =~ /b/i) {
         if (version_cmp($base_ver, $stable_ver_num) > 0) {
             $offer_type = "beta";
         } else {
-            # base is 4.22, stable is 4.22 -> offer stable
             $offer_type = "stable";
         }
     }
@@ -40,11 +47,21 @@ if ($client_ver && $client_ver =~ /b/i) {
 
 # 4. Output the file
 my $final_path = "$cache_dir/HC_RELEASE-$offer_type.txt";
+
+# Print header (required for CGI)
+print $q->header('text/plain');
+
 if (-f $final_path) {
     open(my $fh, '<', $final_path) or die $!;
     local $/;
     my $content = <$fh>;
     close($fh);
+
+    # If this is the ESP version, ensure it points to the specific zip
+    if ($is_esp) {
+        $content =~ s/ESPHamClock-V[\d\.]+\.zip/ESPHamClock-V3.10.zip/g;
+    }
+
     print $content;
 } else {
     print "Unknown\n";

@@ -10,6 +10,7 @@ my $owner      = "komacke";
 my $repo       = "hamclock";
 my $cache_dir  = "/opt/hamclock-backend/cache";
 my $tags_url   = "https://api.github.com/repos/$owner/$repo/tags";
+my $v3_ver     = "3.10";  # Hardcoded legacy version support
 
 mkdir $cache_dir unless -d $cache_dir;
 
@@ -43,9 +44,13 @@ foreach my $tag (@$tags) {
 }
 
 # 2. Process and Save to .txt, .tag, and .zip files
+# Added the '3.10' type to the loop, using the stable_tag as the source
 foreach my $item (
     { type => 'stable', data => $stable_tag },
-    { type => 'beta',   data => $beta_tag   }
+    { type => 'beta',   data => $beta_tag   },
+    # this should be stable_tag but can't do that until we have a stable release with it
+    { type => $v3_ver,  data => $beta_tag }
+    #{ type => $v3_ver,  data => $stable_tag }
 ) {
     my $base_name = "$cache_dir/HC_RELEASE-" . $item->{type};
     my $txt_file  = "$base_name.txt";
@@ -60,8 +65,9 @@ foreach my $item (
     my $clean_ver = $item->{data}->{clean};
     my $orig_ver  = $item->{data}->{original};
 
-    # Determine current display version (stripped)
-    my $display_version = $clean_ver;
+    # Determine current display version
+    # If type is 3.10, force display version to 3.10; otherwise use clean_ver
+    my $display_version = ($item->{type} eq $v3_ver) ? $v3_ver : $clean_ver;
     $display_version =~ s/^(\d+\.[\db]+)\..*/$1/i;
 
     # --- Change Detection Logic ---
@@ -96,7 +102,6 @@ foreach my $item (
     } else {
         print "Error: Failed to download $zip_filename. Release asset might be missing from tag $orig_ver.\n";
         print "Status: " . $zip_resp->status_line . "\n";
-        # Optionally 'next' here if you don't want to update .txt if zip fails
     }
 
     # 2. Write the .tag file
