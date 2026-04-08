@@ -48,9 +48,7 @@ foreach my $tag (@$tags) {
 foreach my $item (
     { type => 'stable', data => $stable_tag },
     { type => 'beta',   data => $beta_tag   },
-    # this should be stable_tag but can't do that until we have a stable release with it
-    { type => $v3_ver,  data => $beta_tag }
-    #{ type => $v3_ver,  data => $stable_tag }
+    { type => $v3_ver,  data => $stable_tag }
 ) {
     my $base_name = "$cache_dir/HC_RELEASE-" . $item->{type};
     my $txt_file  = "$base_name.txt";
