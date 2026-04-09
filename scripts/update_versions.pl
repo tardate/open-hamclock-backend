@@ -102,6 +102,22 @@ foreach my $item (
         print "Status: " . $zip_resp->status_line . "\n";
     }
 
+    # 1b. Additionally download the .ino.bin if this is the v3_ver (3.10)
+    if ($item->{type} eq $v3_ver) {
+        my $bin_filename = "ESPHamClock-V$display_version.ino.bin";
+        my $bin_path     = "$cache_dir/$bin_filename";
+        my $bin_url      = "https://github.com/$owner/$repo/releases/download/$orig_ver/$bin_filename";
+
+        print "Downloading additional binary asset from $bin_url...\n";
+        my $bin_resp = $ua->get($bin_url, ':content_file' => $bin_path);
+        if ($bin_resp->is_success) {
+            chmod 0644, $bin_path;
+            print "Successfully saved $bin_path\n";
+        } else {
+            print "Error: Failed to download $bin_filename.\n";
+        }
+    }
+
     # 2. Write the .tag file
     open(my $tfh, '>', $tag_file) or next;
     print $tfh $orig_ver . "\n";

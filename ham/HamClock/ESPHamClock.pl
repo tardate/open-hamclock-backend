@@ -13,11 +13,12 @@ $query_file //= "";
 my $user_agent = $q->user_agent() || "";
 
 # 1. Determine the target filename
-my $target_zip = "";
+my $target_file = "";
+my $content_type = 'application/zip';
 
 if ($query_file =~ /^ESPHamClock-V[\d\.]+(b\d+)?\.zip$/i) {
     # Case A: Specific version requested directly
-    $target_zip = $query_file;
+    $target_file = $query_file;
 }
 elsif ($query_file eq "ESPHamClock.zip") {
     # Case B: Generic request - Determine version from first line of .txt cache
@@ -39,21 +40,28 @@ elsif ($query_file eq "ESPHamClock.zip") {
                 # \R handles all line ending types (\n, \r\n, etc.)
                 $version_line =~ s/\R//g;
                 # Constructs filename like ESPHamClock-V4.22.zip
-                $target_zip = "ESPHamClock-V$version_line.zip";
+                $target_file = "ESPHamClock-V$version_line.zip";
             }
         }
     }
 }
+elsif ($query_file =~ /^ESPHamClock(-V3\.10)?\.ino\.bin$/i) {
+    # Case C: ESP8266 binary request
+    if ($user_agent eq "ESP8266-http-Update") {
+        $target_file = "ESPHamClock-V3.10.ino.bin";
+        $content_type = 'application/octet-stream';
+    }
+}
 
 # 2. Check for file existence and serve
-my $full_path = "$cache_dir/$target_zip";
+my $full_path = "$cache_dir/$target_file";
 
-if ($target_zip ne "" && -f $full_path) {
+if ($target_file ne "" && -f $full_path) {
     my $filesize = -s $full_path;
 
     print $q->header(
-        -type           => 'application/zip',
-        -attachment     => $target_zip,
+        -type           => $content_type,
+        -attachment     => $target_file,
         -content_length => $filesize,
     );
 
@@ -68,7 +76,7 @@ if ($target_zip ne "" && -f $full_path) {
     }
     close($fh);
 } else {
-    # 404 Error: Either $target_zip was never set or the file is missing
+    # 404 Error: Either $target_file was never set or the file is missing
     print $q->header(
         -status => '404 Not Found',
         -type   => 'text/plain'
