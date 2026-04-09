@@ -72,6 +72,7 @@ RUN cd /opt/hamclock-backend && \
     mv  docker/run.sh /opt && \
     mv  docker/one-time-clean.sh /opt && \
     mv  docker/one-time-clean.txt /opt && \
+    sed -i "s/^\(OHB_MANAGER_VERSION=\).*$/\1$(cat git.version)/" docker/manage-ohb-docker.sh && \
     # \
     # cron is tightly coupled to the type of python install. cron is written for pyenv. however \
     # when there is no pip or pyenv, python runs from /usr. \

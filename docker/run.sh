@@ -28,6 +28,7 @@ else
     cp /opt/hamclock-backend/ham/dashboard/robots.txt /opt/hamclock-backend/htdocs
     cp /opt/hamclock-backend/ham/dashboard/credits-only-index.html /opt/hamclock-backend/htdocs/index.html
 fi
+cp /opt/hamclock-backend/docker/manage-ohb-docker.sh /opt/hamclock-backend/htdocs/
 
 # start the web server
 echo "Starting lighttpd ..."
