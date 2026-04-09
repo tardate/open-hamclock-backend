@@ -823,6 +823,7 @@ services:
     image: $IMAGE
     restart: unless-stopped
     environment:
+      HOST_HOSTNAME: $HOSTNAME
       ENABLE_DASHBOARD: $ENABLE_DASHBOARD
       PSKR_UID: 1001
     networks:

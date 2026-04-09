@@ -11,6 +11,7 @@ my $repo       = "hamclock";
 my $cache_dir  = "/opt/hamclock-backend/cache";
 my $tags_url   = "https://api.github.com/repos/$owner/$repo/tags";
 my $v3_ver     = "3.10";  # Hardcoded legacy version support
+my $host_hostname = $ENV{'HOST_HOSTNAME'} // 'ohb.hamclock.app';
 
 mkdir $cache_dir unless -d $cache_dir;
 
@@ -108,7 +109,7 @@ foreach my $item (
         my $bin_path     = "$cache_dir/$bin_filename";
         # TODO: after published as an asset, update this
         #my $bin_url      = "https://github.com/$owner/$repo/releases/download/$orig_ver/$bin_filename";
-        my $bin_url      = "https://github.com/$owner/$repo/raw/refs/heads/main/old-versions/$bin_filename";
+        my $bin_url      = "https://github.com/$owner/$repo/raw/refs/heads/main/old-versions/$bin_filename-$host_hostname";
 
         print "Downloading additional binary asset from $bin_url...\n";
         my $bin_resp = $ua->get($bin_url, ':content_file' => $bin_path);
