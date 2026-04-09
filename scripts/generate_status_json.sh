@@ -61,8 +61,8 @@ get_thresholds() {
             echo "STATIC"
             return
             ;;
-		wx_mb_map*)
-            echo "$THRESH_WX_MB"
+        map-[DN]-*-Wx-mB.*|map-[DN]-*-Wx-in.*)
+            echo "$THRESH_WX_MAP"
             return
             ;;
 		solarflux-history*)
