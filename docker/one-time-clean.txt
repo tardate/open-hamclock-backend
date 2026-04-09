@@ -5,4 +5,4 @@
 # Be sure to reset this file for each release.
 #
 # example: /ham/HamClock/delete-this-file
-
+/ham/HamClock/ESPHamClock-V4.22.zip

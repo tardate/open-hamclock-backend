@@ -30,6 +30,8 @@ use JSON qw(decode_json);
 use Time::Local;
 use Text::CSV_XS;
 use File::Copy qw(move);
+use File::Basename;
+use File::Spec;
 
 my $POTA_URL = 'https://api.pota.app/spot';
 my $SOTA_URL = 'https://parksnpeaks.org/api/ALL';
@@ -398,3 +400,8 @@ print "WWFF records: $counts{wwff}\n";
 print "Total unique spots written to $TMP: " . scalar(@out) . "\n";
 
 move $TMP, $OUT or die "move failed $TMP -> $OUT: $!\n";
+
+# run split for ESP v3 support
+my $dir = dirname(__FILE__);
+my $other_script = File::Spec->catfile($dir, "split_onta.pl");
+system($^X, $other_script);
