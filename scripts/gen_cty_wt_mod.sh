@@ -6,20 +6,26 @@ OUTFILE=/opt/hamclock-backend/htdocs/ham/HamClock/cty/cty_wt_mod-ll-dxcc.txt
 URL="https://www.country-files.com/cty/cty_wt_mod.dat"
 
 CTY_WX_MOD_BODY=$(curl -s $URL)
+if [ -z "$CTY_WX_MOD_BODY" ]; then
+    echo "$THIS: curl returned empty body from $URL — aborting"
+    exit 1
+fi
+
 SOURCE_VERSION=$(echo "$CTY_WX_MOD_BODY" | head -n 3 | sed -n 's/^.*RELEASE\s\+\([0-9.]\+\).*$/\1/p')
-EXTRACTED_TIME=$(date "+%a %b %d %H:%M:%S %YZ")
-if [ -e $OUTFILE ]; then
-    PREV_SOURCE_VERSION=$(head -n 3 $OUTFILE | sed -n 's/^.*RELEASE\s\+\([0-9.]\+\).*$/\1/p')
+EXTRACTED_TIME=$(date -u "+%a %b %d %H:%M:%S %Y UTC")
+if [ -e "$OUTFILE" ]; then
+    PREV_SOURCE_VERSION=$(head -n 3 "$OUTFILE" | sed -n 's/^.*RELEASE\s\+\([0-9.]\+\).*$/\1/p')
 else
     PREV_SOURCE_VERSION='No previous version'
 fi
 
 if [ "$SOURCE_VERSION" == "$PREV_SOURCE_VERSION" ]; then
-    echo "$THIS: no new version. ours: '$PREV_SOURCE_VERSION', theirs: '$SOURCE_VERSION'"
+    echo "$THIS: no new version (confirmed $SOURCE_VERSION) — touching $OUTFILE to reset staleness clock"
+    touch "$OUTFILE"
     exit 0
 fi
 
-cat <<EOF > $OUTFILE
+cat <<EOF > "$OUTFILE"
 # extracted from cty_wt_mod.dat on $EXTRACTED_TIME
 # from cty_wt_mod.dat RELEASE $SOURCE_VERSION
 # prefix     lat+N   lng+W  DXCC
@@ -91,4 +97,4 @@ END {
     }
 }' | sort -k1,1 >> $OUTFILE
 
-echo "$THIS: updated to version: $SOURCE_VERSION"
+echo "$THIS: updated from version '$PREV_SOURCE_VERSION' to '$SOURCE_VERSION'"
