@@ -5,6 +5,10 @@
 #   */5 * * * * /opt/hamclock-backend/generate_status_json.sh
 
 # ── Config ──────────────────────────────────────────────────────────────────
+# Load external thresholds
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/status_settings.conf"
+
 DATA_DIR="/opt/hamclock-backend/htdocs/ham/HamClock"
 MAPS_DIR="/opt/hamclock-backend/htdocs/ham/HamClock/maps"
 SDO_DIR="/opt/hamclock-backend/htdocs/ham/HamClock/SDO"
@@ -37,34 +41,6 @@ DATA_SUBDIRS=(
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Per-category/file thresholds (seconds) ──────────────────────────────────
-# Derived from crontab cadences.  Each entry: "FRESH RECENT AGED"
-# Any age >= AGED threshold → STALE.
-#
-# Category        cron cadence   FRESH        RECENT       AGED
-# Bz              2 min          3 min        6 min        30 min
-# NOAASpaceWX     30 min         35 min       1 h          3 h
-# ONTA            2 min          3 min        6 min        30 min
-# aurora          ~15 min        20 min       45 min       3 h
-# contests        8 h            9 h          12 h         24 h
-# cty             daily          26 h         30 h         48 h
-# drap            5 min          6 min        15 min       1 h
-# dst             30 min         35 min       1 h          3 h
-# dxpeds          daily          26 h         30 h         48 h
-# esats           6 h (manual)   6 h 10 min   7 h          12 h
-# geomag          ~30 min        35 min       1 h          3 h
-# solar-flux      30 min         35 min       1 h          3 h
-# solar-wind      5 min          6 min        15 min       1 h
-# ssn             1 h            70 min       2 h          6 h
-# worldwx         2 min          3 min        6 min        30 min
-# xray            4 min          5 min        12 min       1 h
-# SDO             30 min         35 min       1 h          3 h
-# maps (default)  varies         65 min       3 h          12 h
-#
-# Static files: rank_coeffs.txt, rank2_coeffs.txt,
-#               solar-flux-history-1945-2025.txt,
-#               map-D-*-Countries (all size variants),
-#               Terrain* → always STATIC, no age badge
-
 get_thresholds() {
     local category="$1"
     local filename="$2"
@@ -75,27 +51,40 @@ get_thresholds() {
             echo "STATIC"
             return
             ;;
-        # map-[D|N]-*-Countries.* and map-[D|N]-*-Terrain* (any size/variant) are static
+		# regex for cloud maps
+        map-[DN]-*-Cloud.*)
+            echo "$THRESH_CLOUDS"
+            return
+            ;;
+        # map-[D|N]-*-Countries.* and map-[D|N]-*-Terrain* are static
         map-[DN]-*-Countries.*|map-[DN]-*-Terrain*|Terrain*)
             echo "STATIC"
             return
             ;;
+		wx_mb_map*)
+            echo "$THRESH_WX_MB"
+            return
+            ;;
+		solarflux-history*)
+            echo "$THRESH_SOLAR_HISTORY"
+            return
+            ;;
     esac
 
+    # ... rest of your existing case "$category" logic ...
     # Per-category thresholds: echo "fresh_sec recent_sec aged_sec"
     case "$category" in
-        Bz|ONTA|worldwx)       echo "180 360 1800"         ;;   # 3m 6m 30m
-        drap|solar-wind)       echo "360 900 3600"         ;;   # 6m 15m 1h
-        xray)                  echo "300 720 3600"         ;;   # 5m 12m 1h
-        aurora)                echo "1200 2700 10800"      ;;   # 20m 45m 3h
-        NOAASpaceWX|dst|geomag|solar-flux|SDO)
-                               echo "2100 3600 10800"      ;;   # 35m 1h 3h
-        ssn)                   echo "4200 7200 21600"      ;;   # 70m 2h 6h
-        esats)                 echo "22200 25200 43200"    ;;   # 6h10m 7h 12h
-        contests)              echo "32400 43200 86400"    ;;   # 9h 12h 24h
-        cty|dxpeds)            echo "93600 108000 172800"  ;;   # 26h 30h 48h
-        map)                   echo "3900 10800 43200"     ;;   # 65m 3h 12h
-        *)                     echo "300 1800 86400"       ;;   # default: 5m 30m 24h
+        Bz|ONTA|worldwx)                       echo "$THRESH_BZ_ONTA_WX" ;;
+        drap|solar-wind)                       echo "$THRESH_DRAP_WIND"  ;;
+        xray)                                  echo "$THRESH_XRAY"       ;;
+        aurora)                                echo "$THRESH_AURORA"     ;;
+        NOAASpaceWX|dst|geomag|solar-flux|SDO) echo "$THRESH_SDO_SPACE"  ;;
+        ssn)                                   echo "$THRESH_SSN"        ;;
+        esats)                                 echo "$THRESH_ESATS"      ;;
+        contests)                              echo "$THRESH_CONTESTS"   ;;
+        cty|dxpeds)                            echo "$THRESH_CTY_DX"     ;;
+        map)                                   echo "$THRESH_MAP"        ;;
+        *)                                     echo "$THRESH_DEFAULT"    ;;
     esac
 }
 
@@ -113,7 +102,7 @@ classify_age() {
     if   [ "$age_sec" -lt "$t_fresh"  ]; then echo "ok FRESH"
     elif [ "$age_sec" -lt "$t_recent" ]; then echo "warn RECENT"
     elif [ "$age_sec" -lt "$t_aged"   ]; then echo "aged AGED"
-    else                                       echo "stale STALE"
+    else                                      echo "stale STALE"
     fi
 }
 # ─────────────────────────────────────────────────────────────────────────────
@@ -460,7 +449,7 @@ cat << HTML_HEAD
     td.missing { color: var(--stale); font-size: 0.76rem; padding: 10px; }
     td.empty   { color: var(--muted); font-size: 0.76rem; padding: 8px 10px; font-style: italic; }
 
-    /* ── Badges ── */
+	/* ── Badges ── */
     .badge {
       display: inline-block; padding: 2px 8px; border-radius: 3px;
       font-size: 0.63rem; font-family: 'IBM Plex Sans', sans-serif;
@@ -470,7 +459,7 @@ cat << HTML_HEAD
     .badge.warn   { background: #f7f0de; color: var(--warn);   border: 1px solid #dfc882; }
     .badge.aged   { background: #f7ede0; color: var(--aged);   border: 1px solid #ddb882; }
     .badge.stale  { background: #f5e8e8; color: var(--stale);  border: 1px solid #d8a8a8; }
-    .badge.static { background: #e8eef5; color: var(--static); border: 1px solid #a8bed8; }
+    .badge.static { background: #eeeeee; color: #7a7a7a;       border: 1px solid #d1d1d1; }
 
     /* ── Footer ── */
     footer {
