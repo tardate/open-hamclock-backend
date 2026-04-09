@@ -52,7 +52,7 @@ get_thresholds() {
             return
             ;;
 		# regex for cloud maps
-        map-[DN]-*-Cloud.*)
+        map-[DN]-*-Clouds.*)
             echo "$THRESH_CLOUDS"
             return
             ;;
