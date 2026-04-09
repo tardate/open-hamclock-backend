@@ -65,6 +65,16 @@ These files never change or are unlikely to need change any time soon.
 - [x] [ham/HamClock/cities2.txt](https://github.com/komacke/open-hamclock-backend/blob/main/ham/HamClock/cities2.txt) - we did not update this file as it appears to require no change
 - [x] [ham/HamClock/NOAASpaceWx/rank2_coeffs.txt](https://github.com/komacke/open-hamclock-backend/blob/main/ham/HamClock/NOAASpaceWX/rank2_coeffs.txt) - we did not update this file as it appears to require no change
 
+### HamClock Upgrades
+HamClocks check with the backend for new HamClock versions. When available they attempt to pull the source zip file from the backend to upgrade themselves.
+
+- [x] Upgrades to the latest released HamClock version are supported from v1.0.5. The source file comes from https://github.com/komacke/hamclock releases.
+
+### ESP8266-based devices
+ESP8266-based devices use an older API (some URLs are different) and need a binary for upgrades rather than source.
+
+- [x] ESP8266-based devices are supported from v1.0.11.
+
 ## Integration Testing Status
 - [x] GOES-16 X-Ray
 - [x] IP Geo Location at startup
