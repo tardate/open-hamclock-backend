@@ -85,7 +85,6 @@ main() {
 do_all() {
     warn_image_tag
     warn_local_edits
-    get_dvoacap
     get_maps
     build_image
 }
@@ -126,14 +125,6 @@ warn_local_edits() {
         fi
     fi
     return $LOCAL_EDITS
-}
-
-get_dvoacap() {
-    if [ ! -e dvoacap.tgz ]; then
-        echo
-        echo "Getting dvoacap-python from GitHub ..."
-        curl -fsSL https://github.com/skyelaird/dvoacap-python/archive/refs/heads/main.tar.gz -o dvoacap.tgz
-    fi
 }
 
 get_maps() {
