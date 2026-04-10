@@ -29,24 +29,42 @@ DATA_SUBDIRS=(
 get_thresholds() {
     local category="$1" filename="$2"
     case "$filename" in
-        rank_coeffs.txt|rank2_coeffs.txt|solar-flux-history-1945-2025.txt) echo "STATIC"; return ;;
-        map-[DN]-*-Clouds.*)         echo "$THRESH_CLOUDS";       return ;;
-        map-[DN]-*-Countries.*|map-[DN]-*-Terrain*|Terrain*) echo "STATIC"; return ;;
-        map-[DN]-*-Wx-mB.*|map-[DN]-*-Wx-in.*) echo "$THRESH_WX_MAP"; return ;;
-        solarflux-history*)          echo "$THRESH_SOLAR_HISTORY"; return ;;
+        rank_coeffs.txt|rank2_coeffs.txt|solar-flux-history-1945-2025.txt)
+            echo "STATIC"; return ;;
+        map-[DN]-*-Clouds.*)
+            echo "$THRESH_CLOUDS"; return ;;
+        map-[DN]-*-Countries.*|map-[DN]-*-Terrain*|Terrain*)
+            echo "STATIC"; return ;;
+        map-[DN]-*-Wx-mB.*|map-[DN]-*-Wx-in.*)
+            echo "$THRESH_WX_MAP"; return ;;
+        solarflux-history*)
+            echo "$THRESH_SOLAR_HISTORY"; return ;;
+        ssn-history.txt)
+            echo "$THRESH_SSN_HISTORY"; return ;;
     esac
     case "$category" in
-        Bz|ONTA|worldwx)                       echo "$THRESH_BZ_ONTA_WX" ;;
-        drap|solar-wind)                       echo "$THRESH_DRAP_WIND"  ;;
-        xray)                                  echo "$THRESH_XRAY"       ;;
-        aurora)                                echo "$THRESH_AURORA"     ;;
-        NOAASpaceWX|dst|geomag|solar-flux|SDO) echo "$THRESH_SDO_SPACE"  ;;
-        ssn)                                   echo "$THRESH_SSN"        ;;
-        esats)                                 echo "$THRESH_ESATS"      ;;
-        contests)                              echo "$THRESH_CONTESTS"   ;;
-        cty|dxpeds)                            echo "$THRESH_CTY_DX"     ;;
-        map)                                   echo "$THRESH_MAP"        ;;
-        *)                                     echo "$THRESH_DEFAULT"    ;;
+        Bz|ONTA|worldwx)
+            echo "$THRESH_BZ_ONTA_WX" ;;
+        drap|solar-wind)
+            echo "$THRESH_DRAP_WIND"  ;;
+        xray)
+            echo "$THRESH_XRAY"       ;;
+        aurora)
+            echo "$THRESH_AURORA"     ;;
+        NOAASpaceWX|dst|geomag|solar-flux|SDO)
+            echo "$THRESH_SDO_SPACE"  ;;
+        ssn)
+            echo "$THRESH_SSN"        ;;
+        esats)
+            echo "$THRESH_ESATS"      ;;
+        contests)
+            echo "$THRESH_CONTESTS"   ;;
+        cty|dxpeds)
+            echo "$THRESH_CTY_DX"     ;;
+        map)
+            echo "$THRESH_MAP"        ;;
+        *)
+            echo "$THRESH_DEFAULT"    ;;
     esac
 }
 
