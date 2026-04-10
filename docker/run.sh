@@ -16,18 +16,14 @@ fi
 echo "Syncing the initial, static directory structure ..."
 mkdir -p /opt/hamclock-backend/htdocs/ham
 cp -a /opt/hamclock-backend/ham/HamClock /opt/hamclock-backend/htdocs/ham
-if [ "$ENABLE_DASHBOARD" == true ]; then
-    echo Installing dashboard ...
-    cp -a /opt/hamclock-backend/ham/dashboard/* /opt/hamclock-backend/htdocs
-    rm -f /opt/hamclock-backend/htdocs/credits-only-index.html 
-else
-    echo Removing dashboard and only installing credits ...
-    find /opt/hamclock-backend/htdocs -maxdepth 1 -type f -exec rm -f "{}" +
-    cp /opt/hamclock-backend/ham/dashboard/favicon.ico /opt/hamclock-backend/htdocs
-    cp /opt/hamclock-backend/ham/dashboard/favicon.svg /opt/hamclock-backend/htdocs
-    cp /opt/hamclock-backend/ham/dashboard/robots.txt /opt/hamclock-backend/htdocs
-    cp /opt/hamclock-backend/ham/dashboard/credits-only-index.html /opt/hamclock-backend/htdocs/index.html
-fi
+
+echo Installing root folder ...
+# remove traces of old, obsolete dashboard
+find /opt/hamclock-backend/htdocs -maxdepth 1 -type f -exec rm -f "{}" +
+cp /opt/hamclock-backend/ham/favicon.ico /opt/hamclock-backend/htdocs
+cp /opt/hamclock-backend/ham/favicon.svg /opt/hamclock-backend/htdocs
+cp /opt/hamclock-backend/ham/robots.txt /opt/hamclock-backend/htdocs
+cp /opt/hamclock-backend/ham/index.html /opt/hamclock-backend/htdocs/index.html
 cp /opt/hamclock-backend/docker/manage-ohb-docker.sh /opt/hamclock-backend/htdocs/
 
 # start the web server

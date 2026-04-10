@@ -26,7 +26,6 @@ CONTAINER=${IMAGE_BASE##*/}
 DEFAULT_HTTP_PORT=:80
 DEFAULT_HTTPS_PORT=-
 DEFAULT_CERT_PATH=-
-DEFAULT_DASHBOARD_INSTALL=true
 DEFAULT_EXTERNAL_HTTP_LOG=false
 # the following env is the lighttpd env file
 DEFAULT_ENV_FILE="$STARTED_FROM/.env"
@@ -105,17 +104,10 @@ main() {
 }
 
 get_compose_opts() {
-    while getopts ":p:s:c:t:e:d:l:" opt; do
+    while getopts ":p:s:c:t:e:l:" opt; do
         case $opt in
             c)
                 REQUESTED_CERT_PATH="$OPTARG"
-                ;;
-            d)
-                REQUESTED_DASHBOARD_INSTALL="$OPTARG"
-                if [ "$REQUESTED_DASHBOARD_INSTALL" != true -a "$REQUESTED_DASHBOARD_INSTALL" != false ]; then
-                    echo "ERROR: -$opt option must be <true|false>"
-                    exit 1
-                fi
                 ;;
             e)
                 REQUESTED_ENV_FILE="$OPTARG"
@@ -227,7 +219,6 @@ save_sticky_vars() {
     cat<<EOF > $STICKY_ENV_FILE
 STICKY_HTTP_PORT="$HTTP_PORT"
 STICKY_HTTPS_PORT="$HTTPS_PORT"
-STICKY_DASHBOARD_INSTALL="$ENABLE_DASHBOARD"
 STICKY_LIGHTTPD_ENV_FILE="$ENV_FILE"
 STICKY_EXTERNAL_HTTP_LOG="$ENABLE_EXTERNAL_HTTP_LOG"
 STICKY_CERT_PATH="$CERT_PATH"
@@ -366,12 +357,6 @@ is_ohb_installed() {
         fi
         if [ "$STICKY_CERT_PATH" != "-" ]; then
             echo "  HTTPS cert path:       '$STICKY_CERT_PATH'"
-        fi
-        echo -n "  Dashboard enabled:     "
-        if [ -n "$STICKY_DASHBOARD_INSTALL" ]; then
-            echo "'$STICKY_DASHBOARD_INSTALL'"
-        else
-            echo "Unknown"
         fi
     fi
 
@@ -683,23 +668,6 @@ determine_https_port() {
     fi
 }
 
-determine_dashboard() {
-
-    # first precedence
-    if [ -n "$REQUESTED_DASHBOARD_INSTALL" ]; then
-        ENABLE_DASHBOARD=$REQUESTED_DASHBOARD_INSTALL
-
-    # second precedence
-    elif [ -n "$STICKY_DASHBOARD_INSTALL" ]; then
-        ENABLE_DASHBOARD=$STICKY_DASHBOARD_INSTALL
-
-    # third precedence
-    else
-        ENABLE_DASHBOARD=$DEFAULT_DASHBOARD_INSTALL
-
-    fi
-}
-
 determine_http_log() {
 
     # first precedence
@@ -799,7 +767,6 @@ docker_compose_yml() {
     determine_http_port
     determine_https_port
     determine_https_cert
-    determine_dashboard
     determine_http_log
 
     determine_tag || return $?
@@ -824,7 +791,6 @@ services:
     restart: unless-stopped
     environment:
       HOST_HOSTNAME: $HOSTNAME
-      ENABLE_DASHBOARD: $ENABLE_DASHBOARD
       PSKR_UID: 1001
     networks:
       - ohb
