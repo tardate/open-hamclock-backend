@@ -3,6 +3,9 @@
 echo "This image is based on git: '$(cat hamclock-backend/git.version)'"
 echo "Start up time: $(date -u +%H:%M:%S)"
 
+# capture any env vars for cron, etc
+printenv | grep ^HOST_HOSTNAME >> /etc/environment 
+
 echo "Preparing for pskr ..."
 mkdir -p /opt/hamclock-backend/htdocs/pskr
 chown $PSKR_UID /opt/hamclock-backend/htdocs/pskr
