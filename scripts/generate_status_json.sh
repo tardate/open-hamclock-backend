@@ -18,13 +18,14 @@ LOAD_MAX_LINES=288   # 288 × 5 min = 24 h
 CALLSIGN="OHB"
 VERSION=$(cat /opt/hamclock-backend/git.version | cut -b -12)
 TZ_LABEL="UTC"
+DISPLAY_HOST="${HOST_HOSTNAME:-$(hostname)}"   # $HOST_HOSTNAME from container env, fallback to hostname
 
 DATA_SUBDIRS=(
     Bz NOAASpaceWX ONTA aurora contests cty drap dst
     dxpeds esats geomag solar-flux solar-wind ssn worldwx xray
 )
 
-# ── Threshold helpers (unchanged) ────────────────────────────────────────────
+# ── Threshold helpers ────────────────────────────────────────────
 get_thresholds() {
     local category="$1" filename="$2"
     case "$filename" in
@@ -63,7 +64,7 @@ classify_age() {
 NOW=$(date -u "+%Y-%m-%d %H:%M:%S")
 NOW_EPOCH=$(date -u +%s)
 
-# ── HTML row builder (unchanged) ─────────────────────────────────────────────
+# ── HTML row builder ─────────────────────────────────────────────
 emit_file_row() {
     local filepath="$1" label="$2"
     local filename; filename=$(basename "$filepath")
@@ -131,20 +132,12 @@ count_data_files() {
     echo "$total"
 }
 
-# ── NEW: collect one load sample and append to ndjson ────────────────────────
+# ── collect one load sample and append to ndjson ────────────────────────
 collect_load_sample() {
-    # CPU: 1-second /proc/stat diff
+    # CPU: two top samples 0.5 s apart; idle% from second sample subtracted from 100
     local cpu_pct=0
-    if [ -r /proc/stat ]; then
-        local line1 line2
-        read -r line1 < /proc/stat; sleep 1; read -r line2 < /proc/stat
-        local -a a=($line1) b=($line2)
-        local tot1=$(( a[1]+a[2]+a[3]+a[4]+a[5]+a[6]+a[7]+a[8] ))
-        local tot2=$(( b[1]+b[2]+b[3]+b[4]+b[5]+b[6]+b[7]+b[8] ))
-        local dtot=$(( tot2 - tot1 ))
-        local dile=$(( b[4] - a[4] ))
-        [ "$dtot" -gt 0 ] && cpu_pct=$(( 100 * (dtot - dile) / dtot ))
-    fi
+    cpu_pct=$(top -bn2 -d0.5 | grep "^%Cpu" | tail -1 \
+              | awk '{printf "%d", 100 - $8}') || cpu_pct=0
 
     local load1=0 load5=0 load15=0
     [ -r /proc/loadavg ] && read -r load1 load5 load15 _ < /proc/loadavg
@@ -180,7 +173,7 @@ collect_load_sample() {
     fi
 }
 
-# ── NEW: read ndjson and emit inline <script> data + chart HTML ──────────────
+# ── read ndjson and emit inline <script> data + chart HTML ──────────────
 build_load_section() {
     # Bail gracefully if no data yet
     if [ ! -s "$LOAD_LOG" ]; then
@@ -251,7 +244,7 @@ NO_DATA
   <div class="load-header">
     <div class="section-icon"></div>
     <span class="section-title">Server load</span>
-    <span class="section-path">$(hostname) · last 24 h</span>
+    <span class="section-path">${DISPLAY_HOST} · last 24 h</span>
   </div>
 
   <div class="load-stats">
@@ -329,7 +322,7 @@ spark('lc-mem',  MEM,   '#3a7a56', 100);
 LOAD_HTML
 }
 
-# ── JSON builder (unchanged) ─────────────────────────────────────────────────
+# ── JSON builder ─────────────────────────────────────────────────
 build_json_entries() {
     local dir="$1" label="$2"
     local -n _first_entry="$3"
@@ -400,7 +393,7 @@ cat << HTML_HEAD
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="refresh" content="300">
-  <title>${CALLSIGN} · Data Product Status</title>
+  <title>${CALLSIGN} · ${DISPLAY_HOST} · Data Product Status</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
