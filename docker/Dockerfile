@@ -112,7 +112,6 @@ RUN cd /opt/hamclock-backend && \
     cp lighttpd-conf/*.conf /etc/lighttpd/conf-available/ && \
     /usr/sbin/lighty-enable-mod accesslog && \
     /usr/sbin/lighttpd-enable-mod hamclock && \
-    /usr/sbin/lighttpd-enable-mod ohb-dashboard && \
     /usr/sbin/lighttpd-enable-mod hc-firmware && \
     /usr/sbin/lighttpd-enable-mod sdo-movies && \
     /usr/sbin/lighttpd-enable-mod hc-diag && \
