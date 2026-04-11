@@ -19,8 +19,7 @@ my $content_type = 'application/zip';
 if ($query_file =~ /^ESPHamClock-V[\d\.]+(b\d+)?\.zip$/i) {
     # Case A: Specific version requested directly
     $target_file = $query_file;
-}
-elsif ($query_file eq "ESPHamClock.zip") {
+} elsif ($query_file eq "ESPHamClock.zip") {
     # Case B: Generic request - Determine version from first line of .txt cache
     my $version_info_file;
 

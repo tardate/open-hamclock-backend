@@ -4,6 +4,7 @@ use warnings;
 use LWP::UserAgent;
 use JSON::PP;
 use Sort::Versions;
+use Digest::SHA;
 
 # --- Configuration ---
 my $owner      = "komacke";
@@ -18,6 +19,35 @@ mkdir $cache_dir unless -d $cache_dir;
 # Increased timeout to 60s for binary downloads
 my $ua = LWP::UserAgent->new(timeout => 60);
 $ua->agent("Version-Cache-Updater/1.0");
+
+# Helper to verify SHA256 and cleanup on failure
+sub verify_and_cleanup {
+    my ($file_path, $sha_url, $associated_files) = @_;
+    return 1 unless -f $file_path;
+
+    my $sha_resp = $ua->get($sha_url);
+    if (!$sha_resp->is_success) {
+        print "Warning: Could not fetch SHA256 from $sha_url. Skipping verification.\n";
+        return 1;
+    }
+
+    # Extract the first column (the hash) from the sha256sum file content
+    my $expected_sha = (split(/\s+/, $sha_resp->decoded_content))[0];
+    my $sha = Digest::SHA->new(256);
+    $sha->addfile($file_path);
+    my $actual_sha = $sha->hexdigest;
+
+    if ($actual_sha eq $expected_sha) {
+        return 1;
+    } else {
+        print "Error: SHA256 mismatch for $file_path! Deleting artifacts.\n";
+        unlink $file_path;
+        foreach my $f (@$associated_files) {
+            unlink $f if -f $f;
+        }
+        return 0;
+    }
+}
 
 # 1. Fetch Tags from GitHub
 my $tags_resp = $ua->get($tags_url);
@@ -91,16 +121,22 @@ foreach my $item (
     my $zip_filename = "ESPHamClock-V$display_version.zip";
     my $zip_path     = "$cache_dir/$zip_filename";
     my $zip_url      = "https://github.com/$owner/$repo/releases/download/$orig_ver/$zip_filename";
+    my $zip_sha_url  = "$zip_url.sha256";
 
     print "Update found! Downloading $item->{type} asset from $zip_url...\n";
     my $zip_resp = $ua->get($zip_url, ':content_file' => $zip_path);
 
     if ($zip_resp->is_success) {
         chmod 0644, $zip_path;
-        print "Successfully saved $zip_path\n";
+        # Check SHASUM; if it fails, delete artifacts and move to next type
+        unless (verify_and_cleanup($zip_path, $zip_sha_url, [$txt_file, $tag_file])) {
+            next;
+        }
+        print "Successfully saved and verified $zip_path\n";
     } else {
         print "Error: Failed to download $zip_filename. Release asset might be missing from tag $orig_ver.\n";
         print "Status: " . $zip_resp->status_line . "\n";
+        next;
     }
 
     # 1b. Additionally download the .ino.bin if this is the v3_ver (3.10)
@@ -110,12 +146,13 @@ foreach my $item (
         # TODO: after published as an asset, update this
         #my $bin_url      = "https://github.com/$owner/$repo/releases/download/$orig_ver/${bin_filename}_${host_hostname}";
         my $bin_url      = "https://github.com/$owner/$repo/raw/refs/heads/main/old-versions/${bin_filename}_${host_hostname}";
+        my $bin_sha_url  = "$bin_url.sha256";
 
         print "Downloading additional binary asset from $bin_url...\n";
         my $bin_resp = $ua->get($bin_url, ':content_file' => $bin_path);
         if ($bin_resp->is_success) {
             chmod 0644, $bin_path;
-            print "Successfully saved $bin_path\n";
+            verify_and_cleanup($bin_path, $bin_sha_url, [$txt_file, $tag_file, $zip_path]);
         } else {
             print "Error: Failed to download $bin_filename.\n";
         }
