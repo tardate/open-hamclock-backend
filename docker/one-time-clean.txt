@@ -6,5 +6,4 @@
 #
 # example: /ham/HamClock/delete-this-file
 
-/ham/HamClock/ESPHamClock-V4.22.zip
-/ham/HamClock/load_history.ndjson
+/ham/HamClock/ESPHamClock.zip
