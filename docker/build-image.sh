@@ -20,12 +20,7 @@ IMAGE=$IMAGE_BASE:$TAG
 CONTAINER=${IMAGE_BASE##*/}
 
 # Get our directory locations in figured out
-# No -s option for realpath on macos/Darwin
-if [ "$(uname)" = "Darwin" ]; then
-    HERE="$(realpath "$(dirname "$0")")"
-else
-    HERE="$(realpath -s "$(dirname "$0")")"
-fi
+HERE="$(cd "$(dirname "$0")" && pwd)"
 THIS="$(basename "$0")"
 cd $HERE
 
