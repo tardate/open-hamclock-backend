@@ -12,7 +12,7 @@
 # The files are relative to a root of /opt/hamclock-backend/htdocs/state/ which is the docker-mounted volume
 
 THIS=$(basename $0)
-HERE="$(realpath -s "$(dirname "$0")" 2>/dev/null)"
+HERE="$(cd "$(dirname "$0")" && pwd)"
 DVC_MOUNT=/opt/hamclock-backend/htdocs
 STOCK_FILES_LIST=$HERE/${THIS%.*}.txt
 FILES_LIST=$DVC_MOUNT/state/${THIS%.*}.txt
@@ -32,8 +32,15 @@ fi
 cp "$STOCK_FILES_LIST" "$FILES_LIST"
 
 while IFS= read -r file; do
-    echo "$THIS: Deleting: $DVC_MOUNT/$file"
-	rm -f "$DVC_MOUNT/$file"
+    if [ -d "$DVC_MOUNT/$file" ]; then
+        echo "$THIS: Removing directory: $DVC_MOUNT/$file"
+	    rmdir "$DVC_MOUNT/$file"
+    elif [ -f "$DVC_MOUNT/$file" ]; then
+        echo "$THIS: Deleting file: $DVC_MOUNT/$file"
+	    rm -f "$DVC_MOUNT/$file"
+    else
+        echo "$THIS: No such file or directory: $DVC_MOUNT/$file"
+    fi
 done < <(grep -vE '^(\s*#|\s*$)' "$FILES_LIST" | tr -d '\r')
 
 # mark the file as from this image and having been run already.

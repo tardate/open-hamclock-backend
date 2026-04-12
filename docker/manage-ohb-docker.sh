@@ -11,8 +11,7 @@ OHB_HTDOCS_DVC=ohb-htdocs
 IMAGE_BASE=komacke/open-hamclock-backend
 
 # Get our directory locations in order
-HERE="$(realpath -s "$(dirname "$0")" 2>/dev/null)"
-[ -z "$HERE" ] && HERE="$(realpath "$(dirname "$0")")"
+HERE="$(cd "$(dirname "$0")" && pwd)"
 THIS="$(basename "$0")"
 STARTED_FROM="$PWD"
 cd $HERE
@@ -526,7 +525,7 @@ copy_env_to_container() {
         if [ -r "$ENV_FILE" ]; then
             docker cp $ENV_FILE $CONTAINER:/opt/hamclock-backend/.env
         else
-            echo "ERROR: ENV file not found: '$(realpath "$ENV_FILE")'" >&2
+            echo "ERROR: ENV file not found: '$ENV_FILE'" >&2
             RETVAL=1
         fi
     else
