@@ -55,7 +55,7 @@ LANG=C
 25 8 * * *     $VENV/bin/python3 $BASE/scripts/gen_dxpeditions_spots.py >> $BASE/logs/dxpeds.log 2>&1
 
 0 1 * * *      $BASE/scripts/gen_solarflux-history.sh   >> /opt/hamclock-backend/logs/gen_solarflux-history.log 2>&1
-0 1 * * *      $BASE/scripts/gen_ssn_history.pl         >> /opt/hamclock-backend/logs/gen_ssn_history.pl 2>&1
+0 1 * * *      $BASE/scripts/gen_ssn_history.pl         >> /opt/hamclock-backend/logs/gen_ssn_history.log 2>&1
 15 3 * * 0     $BASE/scripts/update_pota_parks_cache.sh >> /opt/hamclock-backend/logs/update_pota_parks_cache.log 2>&1
 
 */30 * * * *   $VENV/bin/python3 $BASE/scripts/web15rss_fetch.py >> $BASE/logs/web15rss_fetch.log 2>&1
