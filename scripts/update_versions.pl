@@ -144,8 +144,8 @@ foreach my $item (
         my $bin_filename = "ESPHamClock-V$display_version.ino.bin";
         my $bin_path     = "$cache_dir/$bin_filename";
         # TODO: after published as an asset, update this
-        #my $bin_url      = "https://github.com/$owner/$repo/releases/download/$orig_ver/${bin_filename}_${host_hostname}";
-        my $bin_url      = "https://github.com/$owner/$repo/raw/refs/heads/main/old-versions/${bin_filename}_${host_hostname}";
+        #my $bin_url      = "https://github.com/$owner/$repo/releases/download/$orig_ver/${host_hostname}_${bin_filename}";
+        my $bin_url      = "https://github.com/$owner/$repo/raw/refs/heads/main/old-versions/${host_hostname}_${bin_filename}";
         my $bin_sha_url  = "$bin_url.sha256";
 
         print "Downloading additional binary asset from $bin_url...\n";
