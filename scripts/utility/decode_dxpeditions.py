@@ -45,7 +45,7 @@ def main():
     print()
 
     records = []
-    for i, line in enumerate(lines[6:], start=7):
+    for i, line in enumerate(lines[5:], start=7):
         line = line.strip()
         if not line:
             continue
