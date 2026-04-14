@@ -46,6 +46,7 @@ Model:
   - A very small hand-curated DXNews fallback list is allowed only when those
     calls are absent from NG3K; for those, the script fetches the matched DXNews
     page and tries to parse real dates.
+  - No synthetic general "currently active" windows.
 """
 
 import re
@@ -665,6 +666,8 @@ def write_if_changed(content: str, path: Path) -> bool:
     if path.exists():
         if hashlib.sha256(path.read_text().encode()).hexdigest() == new_hash:
             log.info('Output unchanged, skipping write.')
+            log.info('Refreshing file timestamp.')
+            path.touch()
             return False
     tmp = path.with_suffix('.tmp')
     tmp.write_text(content)

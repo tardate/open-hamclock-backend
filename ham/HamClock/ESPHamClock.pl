@@ -43,8 +43,7 @@ if ($query_file =~ /^ESPHamClock-V[\d\.]+(b\d+)?\.zip$/i) {
             }
         }
     }
-}
-elsif ($query_file =~ /^ESPHamClock(-V3\.10)?\.ino\.bin$/i) {
+} elsif ($query_file =~ /^ESPHamClock(-V3\.10)?\.ino\.bin$/i) {
     # Case C: ESP8266 binary request
     if ($user_agent eq "ESP8266-http-Update") {
         $target_file = "ESPHamClock-V3.10.ino.bin";
