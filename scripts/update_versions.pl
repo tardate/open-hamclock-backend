@@ -7,7 +7,7 @@ use Sort::Versions;
 use Digest::SHA;
 
 # --- Configuration ---
-my $owner      = "komacke";
+my $owner      = "openhamclock";
 my $repo       = "hamclock";
 my $cache_dir  = "/opt/hamclock-backend/cache";
 my $tags_url   = "https://api.github.com/repos/$owner/$repo/tags";
