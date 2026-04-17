@@ -22,7 +22,7 @@ $ua->agent("Version-Cache-Updater/1.0");
 
 # Helper to verify SHA256 and cleanup on failure
 sub verify_and_cleanup {
-    my ($file_path, $sha_url, $associated_files) = @_;
+    my ($file_path, $sha_url, $sha_path, $associated_files) = @_;
     return 1 unless -f $file_path;
 
     my $sha_resp = $ua->get($sha_url);
@@ -31,8 +31,16 @@ sub verify_and_cleanup {
         return 1;
     }
 
+    # Save the sha256sum file locally
+    my $sha_content = $sha_resp->decoded_content;
+    if (open(my $sfh, '>', $sha_path)) {
+        print $sfh $sha_content;
+        close($sfh);
+        chmod 0644, $sha_path;
+    }
+
     # Extract the first column (the hash) from the sha256sum file content
-    my $expected_sha = (split(/\s+/, $sha_resp->decoded_content))[0];
+    my $expected_sha = (split(/\s+/, $sha_content))[0];
     my $sha = Digest::SHA->new(256);
     $sha->addfile($file_path);
     my $actual_sha = $sha->hexdigest;
@@ -42,6 +50,7 @@ sub verify_and_cleanup {
     } else {
         print "Error: SHA256 mismatch for $file_path! Deleting artifacts.\n";
         unlink $file_path;
+        unlink $sha_path; # Delete the saved sha file on failure
         foreach my $f (@$associated_files) {
             unlink $f if -f $f;
         }
@@ -120,6 +129,7 @@ foreach my $item (
     # 1. Download the Release Asset ZIP
     my $zip_filename = "ESPHamClock-V$display_version.zip";
     my $zip_path     = "$cache_dir/$zip_filename";
+    my $zip_sha_path = "$zip_path.sha256";
     my $zip_url      = "https://github.com/$owner/$repo/releases/download/$orig_ver/$zip_filename";
     my $zip_sha_url  = "$zip_url.sha256";
 
@@ -129,7 +139,7 @@ foreach my $item (
     if ($zip_resp->is_success) {
         chmod 0644, $zip_path;
         # Check SHASUM; if it fails, delete artifacts and move to next type
-        unless (verify_and_cleanup($zip_path, $zip_sha_url, [$txt_file, $tag_file])) {
+        unless (verify_and_cleanup($zip_path, $zip_sha_url, $zip_sha_path, [$txt_file, $tag_file])) {
             next;
         }
         print "Successfully saved and verified $zip_path\n";
@@ -143,6 +153,7 @@ foreach my $item (
     if ($item->{type} eq $v3_ver) {
         my $bin_filename = "ESPHamClock-V$display_version.ino.bin";
         my $bin_path     = "$cache_dir/$bin_filename";
+        my $bin_sha_path = "$bin_path.sha256";
         # TODO: after published as an asset, update this
         #my $bin_url      = "https://github.com/$owner/$repo/releases/download/$orig_ver/${host_hostname}_${bin_filename}";
         my $bin_url      = "https://github.com/$owner/$repo/raw/refs/heads/main/old-versions/${host_hostname}_${bin_filename}";
@@ -152,7 +163,7 @@ foreach my $item (
         my $bin_resp = $ua->get($bin_url, ':content_file' => $bin_path);
         if ($bin_resp->is_success) {
             chmod 0644, $bin_path;
-            verify_and_cleanup($bin_path, $bin_sha_url, [$txt_file, $tag_file, $zip_path]);
+            verify_and_cleanup($bin_path, $bin_sha_url, $bin_sha_path, [$txt_file, $tag_file, $zip_path, $zip_sha_path]);
         } else {
             print "Error: Failed to download $bin_filename.\n";
         }
