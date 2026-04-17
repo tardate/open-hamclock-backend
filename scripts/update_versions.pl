@@ -22,25 +22,26 @@ $ua->agent("Version-Cache-Updater/1.0");
 
 # Helper to verify SHA256 and cleanup on failure
 sub verify_and_cleanup {
-    my ($file_path, $sha_url, $sha_path, $associated_files) = @_;
+    my ($file_path, $expected_sha, $associated_files) = @_;
     return 1 unless -f $file_path;
 
-    my $sha_resp = $ua->get($sha_url);
-    if (!$sha_resp->is_success) {
-        print "Warning: Could not fetch SHA256 from $sha_url. Skipping verification.\n";
+    if (!$expected_sha) {
+        print "Warning: No SHA256 provided for $file_path. Skipping verification.\n";
         return 1;
     }
 
+    # Clean the SHA (strip "sha256:" prefix if present)
+    $expected_sha =~ s/^sha256://;
+
     # Save the sha256sum file locally
-    my $sha_content = $sha_resp->decoded_content;
-    if (open(my $sfh, '>', $sha_path)) {
-        print $sfh $sha_content;
+    my $sha_local_path = "$file_path.sha256";
+    if (open(my $sfh, '>', $sha_local_path)) {
+        my $filename = (split(/\//, $file_path))[-1];
+        print $sfh "$expected_sha  $filename\n";
         close($sfh);
-        chmod 0644, $sha_path;
+        chmod 0644, $sha_local_path;
     }
 
-    # Extract the first column (the hash) from the sha256sum file content
-    my $expected_sha = (split(/\s+/, $sha_content))[0];
     my $sha = Digest::SHA->new(256);
     $sha->addfile($file_path);
     my $actual_sha = $sha->hexdigest;
@@ -50,7 +51,7 @@ sub verify_and_cleanup {
     } else {
         print "Error: SHA256 mismatch for $file_path! Deleting artifacts.\n";
         unlink $file_path;
-        unlink $sha_path; # Delete the saved sha file on failure
+        unlink $sha_local_path;
         foreach my $f (@$associated_files) {
             unlink $f if -f $f;
         }
@@ -84,7 +85,6 @@ foreach my $tag (@$tags) {
 }
 
 # 2. Process and Save to .txt, .tag, and .zip files
-# Added the '3.10' type to the loop, using the stable_tag as the source
 foreach my $item (
     { type => 'stable', data => $stable_tag },
     { type => 'beta',   data => $beta_tag   },
@@ -94,7 +94,6 @@ foreach my $item (
     my $txt_file  = "$base_name.txt";
     my $tag_file  = "$base_name.tag";
 
-    # Handle missing tags from API
     if (!$item->{data}) {
         print "No version found for $item->{type}\n";
         next;
@@ -102,22 +101,33 @@ foreach my $item (
 
     my $clean_ver = $item->{data}->{clean};
     my $orig_ver  = $item->{data}->{original};
-
-    # Determine current display version
-    # If type is 3.10, force display version to 3.10; otherwise use clean_ver
     my $display_version = ($item->{type} eq $v3_ver) ? $v3_ver : $clean_ver;
     $display_version =~ s/^(\d+\.[\db]+)\..*/$1/i;
 
-    # --- Change Detection Logic ---
-    if (-f $txt_file) {
-        if (open(my $cfh, '<', $txt_file)) {
-            my $existing_version = <$cfh>;
-            close($cfh);
-            if ($existing_version) {
-                chomp($existing_version);
-                $existing_version =~ s/\R//g;
-                if ($existing_version eq $display_version) {
-                    print "Skipping $item->{type}: Version $display_version is already up to date.\n";
+    # Fetch Release Metadata early for Change Detection
+    my $rel_url = "https://api.github.com/repos/$owner/$repo/releases/tags/$orig_ver";
+    my $rel_resp = $ua->get($rel_url);
+    my $rel_data = $rel_resp->is_success ? decode_json($rel_resp->decoded_content) : undef;
+
+    # Define the target ZIP and its local SHA file
+    my $zip_filename = "ESPHamClock-V$display_version.zip";
+    my $zip_path     = "$cache_dir/$zip_filename";
+    my $zip_sha_path = "$zip_path.sha256";
+
+    # Get the current digest from the API
+    my ($zip_asset) = $rel_data ? grep { $_->{name} eq $zip_filename } @{$rel_data->{assets}} : ();
+    my $zip_digest = ($zip_asset->{digest} // "");
+    $zip_digest =~ s/^sha256://;
+
+    # --- Change Detection Logic (SHA Comparison) ---
+    if ($zip_digest && -f $zip_sha_path) {
+        if (open(my $sfh, '<', $zip_sha_path)) {
+            my $line = <$sfh>;
+            close($sfh);
+            if ($line) {
+                my $existing_sha = (split(/\s+/, $line))[0];
+                if ($existing_sha eq $zip_digest) {
+                    print "Skipping $item->{type}: SHA256 $zip_digest matches local cache.\n";
                     next;
                 }
             }
@@ -127,25 +137,19 @@ foreach my $item (
     # --- If we are here, an update is needed ---
 
     # 1. Download the Release Asset ZIP
-    my $zip_filename = "ESPHamClock-V$display_version.zip";
-    my $zip_path     = "$cache_dir/$zip_filename";
-    my $zip_sha_path = "$zip_path.sha256";
-    my $zip_url      = "https://github.com/$owner/$repo/releases/download/$orig_ver/$zip_filename";
-    my $zip_sha_url  = "$zip_url.sha256";
+    my $zip_url = "https://github.com/$owner/$repo/releases/download/$orig_ver/$zip_filename";
 
     print "Update found! Downloading $item->{type} asset from $zip_url...\n";
     my $zip_resp = $ua->get($zip_url, ':content_file' => $zip_path);
 
     if ($zip_resp->is_success) {
         chmod 0644, $zip_path;
-        # Check SHASUM; if it fails, delete artifacts and move to next type
-        unless (verify_and_cleanup($zip_path, $zip_sha_url, $zip_sha_path, [$txt_file, $tag_file])) {
+        unless (verify_and_cleanup($zip_path, $zip_digest, [$txt_file, $tag_file])) {
             next;
         }
         print "Successfully saved and verified $zip_path\n";
     } else {
-        print "Error: Failed to download $zip_filename. Release asset might be missing from tag $orig_ver.\n";
-        print "Status: " . $zip_resp->status_line . "\n";
+        print "Error: Failed to download $zip_filename. Status: " . $zip_resp->status_line . "\n";
         next;
     }
 
@@ -153,17 +157,16 @@ foreach my $item (
     if ($item->{type} eq $v3_ver) {
         my $bin_filename = "ESPHamClock-V$display_version.ino.bin";
         my $bin_path     = "$cache_dir/$bin_filename";
-        my $bin_sha_path = "$bin_path.sha256";
-        # TODO: after published as an asset, update this
-        #my $bin_url      = "https://github.com/$owner/$repo/releases/download/$orig_ver/${host_hostname}_${bin_filename}";
-        my $bin_url      = "https://github.com/$owner/$repo/raw/refs/heads/main/old-versions/${host_hostname}_${bin_filename}";
-        my $bin_sha_url  = "$bin_url.sha256";
+        my $bin_url      = "https://github.com/$owner/$repo/releases/download/$orig_ver/${host_hostname}_${bin_filename}";
+
+        my ($bin_asset) = $rel_data ? grep { $_->{name} eq "${host_hostname}_${bin_filename}" } @{$rel_data->{assets}} : ();
+        my $bin_digest = $bin_asset->{digest} // "";
 
         print "Downloading additional binary asset from $bin_url...\n";
         my $bin_resp = $ua->get($bin_url, ':content_file' => $bin_path);
         if ($bin_resp->is_success) {
             chmod 0644, $bin_path;
-            verify_and_cleanup($bin_path, $bin_sha_url, $bin_sha_path, [$txt_file, $tag_file, $zip_path, $zip_sha_path]);
+            verify_and_cleanup($bin_path, $bin_digest, [$txt_file, $tag_file, $zip_path, $zip_sha_path]);
         } else {
             print "Error: Failed to download $bin_filename.\n";
         }
@@ -175,19 +178,15 @@ foreach my $item (
     close($tfh);
     chmod 0644, $tag_file;
 
-    # 3. Fetch HC_RELEASE-*.txt content and write .txt file
+    # 3. Fetch HC_RELEASE-*.txt content
     my $github_txt = "HC_RELEASE-" . $item->{type} . ".txt";
     my $raw_url = "https://raw.githubusercontent.com/$owner/$repo/$orig_ver/$github_txt";
     my $resp = $ua->get($raw_url);
 
     open(my $fh, '>', $txt_file) or next;
-
-    # Line 1: Stripped Version
     print $fh $display_version . "\n";
 
     my $status_msg = "Fetched $orig_ver for $item->{type}";
-
-    # Line 2+: Content or Fallback
     if ($resp->is_success && $resp->decoded_content =~ /\S/) {
         print $fh $resp->decoded_content;
         $status_msg .= " (with release notes)";
