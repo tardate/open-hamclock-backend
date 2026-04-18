@@ -16,7 +16,7 @@ OHB implements, and is fully compatible with, the HamClock Standards as
 defined and managed at <https://github.com/openhamclock/hamclock-standards>.
 
 The "frontend" implementation (aka HamClock or HamClock Client)
-can be found at <https://github.com/komacke/hamclock>.
+can be found at <https://github.com/openhamclock/hamclock>.
 
 ## Overview
 

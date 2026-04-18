@@ -68,7 +68,7 @@ These files never change or are unlikely to need change any time soon.
 ### HamClock Upgrades
 HamClocks check with the backend for new HamClock versions. When available they attempt to pull the source zip file from the backend to upgrade themselves.
 
-- [x] Upgrades to the latest released HamClock version are supported from v1.0.5. The source file comes from https://github.com/komacke/hamclock releases.
+- [x] Upgrades to the latest released HamClock version are supported from v1.0.5. The source file comes from https://github.com/openhamclock/hamclock releases.
 
 ### ESP8266-based devices
 ESP8266-based devices use an older API (some URLs are different) and need a binary for upgrades rather than source.
