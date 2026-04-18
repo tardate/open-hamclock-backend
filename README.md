@@ -61,7 +61,7 @@ Bug reports and pull requests are welcome on GitHub at
 ## Related
 
 * [HamClock Standards](https://github.com/openhamclock/hamclock-standards) - specifications source
-* [HamClock Client](https://github.com/komacke/hamclock) - reference frontend implementation source
+* [HamClock Client](https://github.com/openhamclock/hamclock) - reference frontend implementation source
 * [HamClockLauncher](https://github.com/huberthickman/HamClockLauncher) - frontend installer/launcher source
 * Open Hamclock Backend project
     * <https://ohb.works/> - main site
